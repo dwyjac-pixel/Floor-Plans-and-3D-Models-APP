@@ -21,12 +21,16 @@ struct CaribinalScannerApp: App {
     @State private var pendingImportURL: URL?
 
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(AppSettings.appearanceKey) private var appearance = "system"
 
     init() {
+        ScanDebugLog.log("boot: app init entered")
         let schema = Schema([RenovationProject.self, DeletedProject.self])
         let cloud = ModelConfiguration(schema: schema,
                                        cloudKitDatabase: .private(ScanStore.cloudContainerID))
+        ScanDebugLog.log("boot: trying cloud ModelContainer")
         if let c = try? ModelContainer(for: schema, configurations: [cloud]) {
+            ScanDebugLog.log("boot: cloud ModelContainer ready")
             container = c
             storeMode = "cloud"
         } else if let c = try? ModelContainer(for: schema,
@@ -43,6 +47,7 @@ struct CaribinalScannerApp: App {
             storeMode = "memory"
         }
         print("CaribinalScanner store mode: \(storeMode)")
+        ScanDebugLog.log("boot: app init done, store mode \(storeMode)")
     }
 
     var body: some Scene {
@@ -55,13 +60,16 @@ struct CaribinalScannerApp: App {
                 } else {
                     ProgressView("Preparing your projects…")
                         .task {
+                            ScanDebugLog.log("boot: bootstrap begin")
                             await ScanStore.bootstrap()
+                            ScanDebugLog.log("boot: bootstrap end")
                             storageReady = true
                         }
                 }
             }
             .onOpenURL { pendingImportURL = $0 }
             .tint(Color(red: 0.80, green: 0.28, blue: 0.33))
+            .preferredColorScheme(AppSettings.colorScheme(appearance))
             .onChange(of: scenePhase) { _, phase in
                 // CloudKit imports land mid-session; re-converge whenever
                 // the app returns to the foreground.

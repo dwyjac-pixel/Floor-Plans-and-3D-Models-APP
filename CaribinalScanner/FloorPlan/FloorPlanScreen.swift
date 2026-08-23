@@ -36,6 +36,10 @@ struct FloorPlanScreen: View {
     @State private var plan: FloorPlanModel
     @State private var rooms: [RoomEntry]
     @State private var selectedRoomID: UUID?   // nil = all rooms (view only)
+    // Floor whose rooms the merged scope shows. Only meaningful when the
+    // project spans 2+ distinct floors — single-floor projects never
+    // surface floor UI and scopedRooms passes every room through.
+    @State private var selectedFloorName: String
     @State private var canConvertManualPlan: Bool
     @State private var cornerRoom: CornerRoom?
     @State private var viewMode: ViewMode = .plan
@@ -154,6 +158,8 @@ struct FloorPlanScreen: View {
         _rooms = State(initialValue: entries)
         _canConvertManualPlan = State(initialValue: !hasRoomPlanScan && entries.isEmpty
                                       && ScanStore.loadManualRoom(for: project) != nil)
+        _selectedFloorName = State(initialValue: entries.first?.floorDisplayName
+                                   ?? RoomEntry.defaultFloorName)
         // Open on the first room so the drawing tools are immediately
         // available; "All Rooms" (view only) is one tap away in the picker.
         if let first = entries.first {
@@ -178,6 +184,28 @@ struct FloorPlanScreen: View {
         return plan.walls.count == cornerRoom.corners.count + cornerRoom.interiorWalls.count
     }
 
+    /// Distinct floor names in room order; floor UI appears only with 2+.
+    private var floorNames: [String] {
+        var names: [String] = []
+        for entry in rooms where !names.contains(entry.floorDisplayName) {
+            names.append(entry.floorDisplayName)
+        }
+        return names
+    }
+
+    private var hasMultipleFloors: Bool { floorNames.count > 1 }
+
+    /// Rooms the merged scope covers: the selected floor's rooms on a
+    /// multi-floor project, every room otherwise. Floors overlap in plan
+    /// space (a basement sits under the main floor), so merged views must
+    /// never mix storeys. Falls back to every room if the selected floor
+    /// name ever goes stale.
+    private var scopedRooms: [RoomEntry] {
+        guard hasMultipleFloors else { return rooms }
+        let filtered = rooms.filter { $0.floorDisplayName == selectedFloorName }
+        return filtered.isEmpty ? rooms : filtered
+    }
+
     var body: some View {
         layerSheets
     }
@@ -196,15 +224,9 @@ struct FloorPlanScreen: View {
                 HStack {
                     Label("Room", systemImage: "square.split.bottomrightquarter")
                         .font(.footnote.weight(.semibold))
-                    Picker("Room", selection: $selectedRoomID) {
-                        Text("All Rooms (view only)").tag(UUID?.none)
-                        ForEach(rooms) { entry in
-                            Text(entry.name).tag(Optional(entry.id))
-                        }
-                    }
-                    .pickerStyle(.menu)
+                    roomScopePicker
                     Spacer()
-                    Text(selectedRoomID == nil ? "Viewing all rooms" : "Editing this room")
+                    Text(scopeStatusText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -252,6 +274,90 @@ struct FloorPlanScreen: View {
             }
 
             detailList
+        }
+    }
+
+    /// Room picker for the scope row: the flat picker on single-floor
+    /// projects (unchanged), a floor-sectioned menu once rooms span 2+
+    /// floors.
+    @ViewBuilder
+    private var roomScopePicker: some View {
+        if hasMultipleFloors {
+            floorRoomMenu
+        } else {
+            Picker("Room", selection: $selectedRoomID) {
+                Text("All Rooms (view only)").tag(UUID?.none)
+                ForEach(rooms) { entry in
+                    Text(entry.name).tag(Optional(entry.id))
+                }
+            }
+            .pickerStyle(.menu)
+        }
+    }
+
+    /// Multi-floor room menu: one section per floor, each led by an
+    /// "All of <floor>" merged view followed by that floor's rooms.
+    private var floorRoomMenu: some View {
+        Menu {
+            ForEach(floorNames, id: \.self) { floor in
+                Section(floor) {
+                    Button {
+                        selectAllRooms(on: floor)
+                    } label: {
+                        if selectedRoomID == nil, selectedFloorName == floor {
+                            Label("All of \(floor)", systemImage: "checkmark")
+                        } else {
+                            Text("All of \(floor)")
+                        }
+                    }
+                    ForEach(rooms.filter { $0.floorDisplayName == floor }) { entry in
+                        Button {
+                            selectRoomEntry(entry)
+                        } label: {
+                            if selectedRoomID == entry.id {
+                                Label(entry.name, systemImage: "checkmark")
+                            } else {
+                                Text(entry.name)
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(scopeMenuTitle)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2.weight(.semibold))
+            }
+        }
+    }
+
+    private var scopeMenuTitle: String {
+        if let id = selectedRoomID, let entry = rooms.first(where: { $0.id == id }) {
+            return entry.name
+        }
+        return "All of \(selectedFloorName)"
+    }
+
+    private var scopeStatusText: String {
+        if selectedRoomID != nil { return "Editing this room" }
+        return hasMultipleFloors ? "Viewing \(selectedFloorName)" : "Viewing all rooms"
+    }
+
+    private func selectAllRooms(on floor: String) {
+        let floorChanged = selectedFloorName != floor
+        selectedFloorName = floor
+        if selectedRoomID != nil {
+            selectedRoomID = nil          // onChange(selectedRoomID) runs switchRoom
+        } else if floorChanged {
+            switchRoom()                  // room stayed nil, so no onChange fires
+        }
+    }
+
+    private func selectRoomEntry(_ entry: RoomEntry) {
+        selectedFloorName = entry.floorDisplayName
+        if selectedRoomID != entry.id {
+            selectedRoomID = entry.id     // onChange(selectedRoomID) runs switchRoom
         }
     }
 
@@ -906,7 +1012,7 @@ struct FloorPlanScreen: View {
         if let id = selectedRoomID, let entry = rooms.first(where: { $0.id == id }) {
             entries = [entry]
         } else {
-            entries = rooms
+            entries = scopedRooms
         }
         // A lone room doesn't need its name stamped across the drawing —
         // the name lives in the rooms list. Labels exist to tell rooms
@@ -1047,8 +1153,8 @@ struct FloorPlanScreen: View {
     /// this element names the plan and points to the reachable controls.
     private var planAccessibilityLabel: String {
         var parts = ["Floor plan"]
-        if rooms.count > 1 {
-            parts.append("\(rooms.count) rooms")
+        if scopedRooms.count > 1 {
+            parts.append("\(scopedRooms.count) rooms")
         }
         if let cornerRoom, !cornerRoom.openings.isEmpty {
             parts.append("\(cornerRoom.openings.count) doors and windows")
@@ -1108,10 +1214,12 @@ struct FloorPlanScreen: View {
     /// state changes, so the camera stays where the user put it.
     private func buildPaneScene() -> SCNScene? {
         if let cornerRoom {
-            return Model3DBuilder.makeScene(room: cornerRoom, useImperial: useImperial, withLabels: true)
+            return Model3DBuilder.makeScene(room: cornerRoom, useImperial: useImperial,
+                                            withLabels: AppSettings.show3DLabels)
         }
         if !rooms.isEmpty {
-            return Model3DBuilder.makeScene(rooms: rooms.map(\.room), useImperial: useImperial, withLabels: true)
+            return Model3DBuilder.makeScene(rooms: scopedRooms.map(\.room), useImperial: useImperial,
+                                            withLabels: AppSettings.show3DLabels)
         }
         return Model3DBuilder.viewerScene(for: project, useImperial: useImperial)
     }
@@ -1802,7 +1910,7 @@ struct FloorPlanScreen: View {
             updated[drag.roomIndex].room = drag.baseline[drag.roomIndex].room
                 .translated(dx: gridSnapped(Double(delta.x)), dz: gridSnapped(Double(delta.y)))
             rooms = updated
-            if let merged = FloorPlanModel(rooms: updated.map(\.room)) { plan = merged }
+            if let merged = FloorPlanModel(rooms: scopedRooms.map(\.room)) { plan = merged }
             dragReadout = "Moving \(updated[drag.roomIndex].name)"
             return
         }
@@ -2329,8 +2437,11 @@ struct FloorPlanScreen: View {
     }
 
     /// Which room's outline contains this merged-plan point (ray cast).
+    /// Off-floor rooms are skipped — storeys overlap in plan space, so an
+    /// Arrange drag must never grab a room the canvas isn't showing.
     private func roomIndex(containing point: CGPoint) -> Int? {
-        for (index, entry) in rooms.enumerated() {
+        let scopedIDs = Set(scopedRooms.map(\.id))
+        for (index, entry) in rooms.enumerated() where scopedIDs.contains(entry.id) {
             let corners = entry.room.corners
             guard corners.count >= 3 else { continue }
             var inside = false
@@ -2383,7 +2494,7 @@ struct FloorPlanScreen: View {
     }
 
     private func snapCamera(_ mode: CameraView) {
-        let sceneRooms: [CornerRoom] = cornerRoom.map { [$0] } ?? rooms.map(\.room)
+        let sceneRooms: [CornerRoom] = cornerRoom.map { [$0] } ?? scopedRooms.map(\.room)
         let allCorners = sceneRooms.flatMap(\.corners)
         guard let minX = allCorners.map(\.x).min(),
               let maxX = allCorners.map(\.x).max(),
@@ -2413,7 +2524,7 @@ struct FloorPlanScreen: View {
     private func toggleWalkMode() {
         walkModeActive.toggle()
         if walkModeActive {
-            let sceneRooms: [CornerRoom] = cornerRoom.map { [$0] } ?? rooms.map(\.room)
+            let sceneRooms: [CornerRoom] = cornerRoom.map { [$0] } ?? scopedRooms.map(\.room)
             let allCorners = sceneRooms.flatMap(\.corners)
             guard let minX = allCorners.map(\.x).min(),
                   let maxX = allCorners.map(\.x).max(),
@@ -3026,7 +3137,7 @@ struct FloorPlanScreen: View {
             if let roomPlan = FloorPlanModel(cornerRoom: entry.room) { plan = roomPlan }
         } else {
             cornerRoom = nil
-            if let mergedPlan = FloorPlanModel(rooms: rooms.map(\.room)) { plan = mergedPlan }
+            if let mergedPlan = FloorPlanModel(rooms: scopedRooms.map(\.room)) { plan = mergedPlan }
         }
         editVersion += 1
         resetView()

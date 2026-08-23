@@ -12,6 +12,8 @@ struct ProjectListView: View {
     @Query(sort: \RenovationProject.createdAt, order: .reverse) private var projects: [RenovationProject]
     @State private var showingNewProject = false
     @State private var showingBusinessProfile = false
+    @State private var showingSettings = false
+    @State private var showingAssistant = false
     @State private var showingImporter = false
     @State private var importMessage: String?
     @State private var isImporting = false
@@ -53,7 +55,7 @@ struct ProjectListView: View {
                     }
                 }
             }
-            .navigationTitle("Caribinal Scanner")
+            .navigationTitle("Reno Planner")
             .safeAreaInset(edge: .top, spacing: 0) {
                 if storeMode == "memory" {
                     Label("Storage problem: running on temporary memory — changes will NOT be saved. Restart the app; if this persists, free up space or reinstall.",
@@ -77,11 +79,22 @@ struct ProjectListView: View {
             }
             .searchable(text: $searchText, prompt: "Client, address, or project")
             .toolbar {
+                Button {
+                    showingAssistant = true
+                } label: {
+                    Image(systemName: "sparkles")
+                }
+                .accessibilityLabel("AI Assistant")
                 Menu {
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
                     Button {
                         showingBusinessProfile = true
                     } label: {
-                        Label("Business Profile", systemImage: "gearshape")
+                        Label("Business Profile", systemImage: "building.2")
                     }
                     Button {
                         showingImporter = true
@@ -133,6 +146,12 @@ struct ProjectListView: View {
             .sheet(isPresented: $showingBusinessProfile) {
                 BusinessProfileScreen()
             }
+            .sheet(isPresented: $showingSettings) {
+                SettingsScreen()
+            }
+            .sheet(isPresented: $showingAssistant) {
+                AssistantScreen()
+            }
             .sheet(isPresented: $showingNewProject) {
                 NewProjectSheet()
             }
@@ -161,14 +180,20 @@ struct ProjectListView: View {
                 }
             }
         } detail: {
-            if let selectedProject {
-                ProjectDetailView(project: selectedProject)
-            } else {
-                ContentUnavailableView(
-                    "Select a Project",
-                    systemImage: "house",
-                    description: Text("Choose a project from the list to view its details, scans, and estimate.")
-                )
+            // The detail column owns its own stack so screens pushed from a
+            // project (floor plan, quote, compliance…) pop back INTO the
+            // project. Without it, the collapsed split view on iPhone pops
+            // straight past the project to the list.
+            NavigationStack {
+                if let selectedProject {
+                    ProjectDetailView(project: selectedProject)
+                } else {
+                    ContentUnavailableView(
+                        "Select a Project",
+                        systemImage: "house",
+                        description: Text("Choose a project from the list to view its details, scans, and estimate.")
+                    )
+                }
             }
         }
     }

@@ -23,6 +23,8 @@ enum ScanStore {
     static let permitMeasurementsFileName = "permit_measurements.json"
     static let quoteSettingsFileName = "quote_settings.json"
     static let markersFileName = "markers.json"
+    static let scanWalksFileName = "scan_walks.json"
+    static let aiContextFileName = "ai_context.json"
     static let photoCaptionsFileName = "photo_captions.json"
     static let photosFolderName = "photos"
 
@@ -70,9 +72,11 @@ enum ScanStore {
     /// a user can rename folders in Finder; a renamed folder simply renders
     /// as an empty project, and .cbproj backups are the recovery story.
     static func bootstrap() async {
+        ScanDebugLog.log("boot: resolving ubiquity container")
         let resolved: URL? = await Task.detached(priority: .userInitiated) {
             FileManager.default.url(forUbiquityContainerIdentifier: cloudContainerID)
         }.value
+        ScanDebugLog.log("boot: ubiquity container \(resolved == nil ? "nil" : "resolved")")
 
         guard let container = resolved else {
             rootLock.lock()
@@ -90,13 +94,16 @@ enum ScanStore {
         // written locally during an iCloud-off spell, and anything a crashed
         // previous migration left behind.
         migrate(localRoot: localProjectsRoot, into: cloudRoot)
+        ScanDebugLog.log("boot: migrate done")
 
         rootLock.lock()
         cachedRoot = cloudRoot
         rootLock.unlock()
 
         resolveConflictVersions(under: cloudRoot)
+        ScanDebugLog.log("boot: conflict resolution done")
         requestDownload(of: cloudRoot)
+        ScanDebugLog.log("boot: download requested")
     }
 
     /// Merges the local Projects tree into the cloud tree, per file, newest
@@ -402,6 +409,80 @@ enum ScanStore {
         }
     }
 
+    // MARK: - Continuous multi-room scan walks
+
+    /// One continuous multi-room LiDAR walk. The AR session stays alive
+    /// between rooms, so every captured room shares one coordinate space —
+    /// their converted plans keep true relative positions automatically.
+    struct ScanWalk: Codable {
+        var floorName: String
+        var capturedAt: Date
+        var rooms: [CapturedRoom]
+    }
+
+    static func loadScanWalks(for project: RenovationProject) -> [ScanWalk] {
+        decodeFile([ScanWalk].self, named: scanWalksFileName, for: project) ?? []
+    }
+
+    /// Saves a finished walk: raw room data first (recoverable no matter
+    /// what follows), then each room converted to an editable plan — the
+    /// batch translated as one unit so the walk's true layout survives —
+    /// and finally the whole walk merged into one dollhouse USDZ.
+    ///
+    /// QA-012 pattern: the caller resolves the directory and loads the
+    /// existing rooms/walks on the main actor; this function does pure URL
+    /// I/O and never touches a SwiftData model, so it is safe detached.
+    /// Returns how many rooms were added and how many failed conversion.
+    static func saveScanWalk(rooms captured: [CapturedRoom], floorName: String,
+                             existingRooms: [RoomEntry], existingWalks: [ScanWalk],
+                             directory dir: URL) async throws -> (added: Int, failed: Int) {
+        var walks = existingWalks
+        walks.append(ScanWalk(floorName: floorName, capturedAt: .now, rooms: captured))
+        try coordinatedWrite(JSONEncoder().encode(walks),
+                             to: dir.appendingPathComponent(scanWalksFileName))
+
+        var converted: [CornerRoom] = []
+        var failed = 0
+        for room in captured {
+            if let cornerRoom = ScanConverter.convert(room) {
+                converted.append(cornerRoom)
+            } else {
+                failed += 1
+            }
+        }
+        var all = existingRooms
+        let placed = RoomsFile.placeGroup(converted, alongside: existingRooms)
+        let base = existingRooms.count
+        for (index, room) in placed.enumerated() {
+            all.append(RoomEntry(name: "Scanned Room \(base + index + 1)",
+                                 room: room, floorName: floorName))
+        }
+        if !placed.isEmpty {
+            try coordinatedWrite(JSONEncoder().encode(RoomsFile(rooms: all)),
+                                 to: dir.appendingPathComponent(roomsFileName))
+        }
+
+        // Merged walk USDZ via StructureBuilder — a nice-to-have whose
+        // failure never voids the save (rooms.json already carries the plan;
+        // scan.usdz rebuilds from the converted rooms regardless).
+        let usdz = dir.appendingPathComponent(lidarUSDZFileName)
+        let temp = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("\(UUID().uuidString).tmp.usdz")
+        do {
+            let builder = StructureBuilder(options: [.beautifyObjects])
+            let structure = try await builder.capturedStructure(from: captured)
+            do {
+                try structure.export(to: temp, exportOptions: .parametric)
+            } catch {
+                try structure.export(to: temp, exportOptions: .mesh)
+            }
+            try coordinatedReplace(at: usdz, withItemAt: temp)
+        } catch {
+            try? FileManager.default.removeItem(at: temp)
+        }
+        return (placed.count, failed)
+    }
+
     static func usdzURL(for project: RenovationProject) -> URL? {
         existingFile(named: usdzFileName, for: project)
     }
@@ -469,6 +550,22 @@ enum ScanStore {
 
     static func loadTakeoffAdjustments(for project: RenovationProject) -> TakeoffAdjustments? {
         decodeFile(TakeoffAdjustments.self, named: takeoffAdjustmentsFileName, for: project)
+    }
+
+    // MARK: - On-device AI context
+
+    private struct AIContext: Codable {
+        var postalCode: String?
+    }
+
+    static func saveAIPostal(_ postal: String, for project: RenovationProject) {
+        try? write(JSONEncoder().encode(AIContext(postalCode: postal)),
+                   named: aiContextFileName, for: project)
+    }
+
+    static func loadAIPostal(for project: RenovationProject) -> String? {
+        let value = decodeFile(AIContext.self, named: aiContextFileName, for: project)?.postalCode
+        return (value?.isEmpty ?? true) ? nil : value
     }
 
     static func saveAIChat(_ messages: [AIChatMessage], for project: RenovationProject) throws {

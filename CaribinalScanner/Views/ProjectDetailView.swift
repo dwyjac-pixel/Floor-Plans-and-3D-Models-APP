@@ -83,6 +83,30 @@ struct ProjectDetailView: View {
         return .shareReport
     }
 
+    /// Distinct storey names in room order; floor headers only appear when
+    /// the project actually spans more than one.
+    private var floorNames: [String] {
+        var names: [String] = []
+        for entry in rooms where !names.contains(entry.floorDisplayName) {
+            names.append(entry.floorDisplayName)
+        }
+        return names
+    }
+
+    private var hasMultipleFloors: Bool { floorNames.count > 1 }
+
+    /// The project's existing floors first, then common presets — so the
+    /// Move-to-Floor menu can re-file into an existing storey or start a
+    /// new one.
+    private var floorChoices: [String] {
+        var choices = floorNames
+        for preset in [RoomEntry.defaultFloorName, "Basement", "Second Floor", "Garage"]
+            where !choices.contains(preset) {
+            choices.append(preset)
+        }
+        return choices
+    }
+
     private var estimateResult: EstimateResult? {
         guard let estimateInputs else { return nil }
         return EstimateCalculator.calculate(inputs: estimateInputs,
@@ -173,29 +197,19 @@ struct ProjectDetailView: View {
 
                 if !rooms.isEmpty {
                     Divider()
-                    ForEach(rooms) { entry in
-                        HStack {
-                            Label(entry.name, systemImage: "square.dashed")
-                            Spacer()
-                            Text(Measure.area(entry.room.floorAreaSquareMeters, imperial: useImperial))
+                    if hasMultipleFloors {
+                        ForEach(floorNames, id: \.self) { floor in
+                            Text(floor)
+                                .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
-                            // Visible handle for the same actions as the
-                            // context menu, so deleting one scan doesn't rely
-                            // on a hidden gesture.
-                            Menu {
-                                roomRowActions(entry)
-                            } label: {
-                                Image(systemName: "ellipsis.circle")
-                                    .foregroundStyle(.secondary)
+                                .padding(.top, 2)
+                            ForEach(rooms.filter { $0.floorDisplayName == floor }) { entry in
+                                roomRow(entry)
                             }
-                            .accessibilityLabel("\(entry.name) actions")
-                            .accessibilityHint("Rename, recapture, or delete this room")
                         }
-                        .padding(.vertical, 2)
-                        .accessibilityElement(children: .contain)
-                        .accessibilityLabel("\(entry.name), \(Measure.area(entry.room.floorAreaSquareMeters, imperial: useImperial))")
-                        .contextMenu {
-                            roomRowActions(entry)
+                    } else {
+                        ForEach(rooms) { entry in
+                            roomRow(entry)
                         }
                     }
                     if rooms.count > 1 {
@@ -262,6 +276,12 @@ struct ProjectDetailView: View {
                     Text("Capture or trace a room to generate a material takeoff.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                }
+                // Always visible: the screen itself walks the user through
+                // whatever is missing (rooms, prices, Apple Intelligence),
+                // which beats an invisible feature.
+                navRow(title: "AI Price Analysis (On-Device)", systemImage: "wand.and.sparkles") {
+                    PriceAnalysisScreen(project: project)
                 }
                 if let result = estimateResult {
                     infoRow("Rough range", result.rangeText)
@@ -731,6 +751,32 @@ struct ProjectDetailView: View {
         try? ScanStore.saveRooms(rooms, for: project)
     }
 
+    private func roomRow(_ entry: RoomEntry) -> some View {
+        HStack {
+            Label(entry.name, systemImage: "square.dashed")
+            Spacer()
+            Text(Measure.area(entry.room.floorAreaSquareMeters, imperial: useImperial))
+                .foregroundStyle(.secondary)
+            // Visible handle for the same actions as the
+            // context menu, so deleting one scan doesn't rely
+            // on a hidden gesture.
+            Menu {
+                roomRowActions(entry)
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityLabel("\(entry.name) actions")
+            .accessibilityHint("Rename, recapture, or delete this room")
+        }
+        .padding(.vertical, 2)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(entry.name), \(Measure.area(entry.room.floorAreaSquareMeters, imperial: useImperial))")
+        .contextMenu {
+            roomRowActions(entry)
+        }
+    }
+
     @ViewBuilder
     private func roomRowActions(_ entry: RoomEntry) -> some View {
         Button {
@@ -754,11 +800,34 @@ struct ProjectDetailView: View {
         } label: {
             Label("Retrace from Photo / PDF", systemImage: "doc.viewfinder")
         }
+        Menu {
+            ForEach(floorChoices, id: \.self) { floor in
+                Button {
+                    moveRoom(entry.id, toFloor: floor)
+                } label: {
+                    if entry.floorDisplayName == floor {
+                        Label(floor, systemImage: "checkmark")
+                    } else {
+                        Text(floor)
+                    }
+                }
+            }
+        } label: {
+            Label("Move to Floor…", systemImage: "square.3.stack.3d")
+        }
         Button(role: .destructive) {
             deleteRoom(entry.id)
         } label: {
             Label("Delete Room", systemImage: "trash")
         }
+    }
+
+    private func moveRoom(_ id: UUID, toFloor floor: String) {
+        guard let index = rooms.firstIndex(where: { $0.id == id }) else { return }
+        // nil keeps the room on the legacy default floor, so a project moved
+        // back to a single storey reads like a pre-floors file.
+        rooms[index].floorName = floor == RoomEntry.defaultFloorName ? nil : floor
+        try? ScanStore.saveRooms(rooms, for: project)
     }
 
     private func deleteRoom(_ id: UUID) {
@@ -1221,6 +1290,9 @@ private struct EditDetailsSheet: View {
                     TextField("Project name", text: $project.name)
                     TextField("Client name", text: $project.clientName)
                     TextField("Property address", text: $project.address)
+                    TextField("Postal / ZIP code", text: $project.postalCode)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
                     TextField("Phone", text: $project.phone)
                         .keyboardType(.phonePad)
                     TextField("Email", text: $project.email)
