@@ -16,6 +16,7 @@ struct PlanSegment: Identifiable {
     var swingsOutward = false   // doors: swing away from the plan interior
     var colorHex: String?       // walls: per-wall paint; nil = plan style
     var isPerimeter = false     // walls: outline walls get exterior dimension strings
+    var interiorNormal: CGPoint?   // openings: exact unit normal toward the room
 
     var lengthMeters: Double {
         Double(hypot(end.x - start.x, end.y - start.y))
@@ -211,12 +212,25 @@ struct FloorPlanModel {
         }
         guard segments.count >= 3 else { return nil }
 
+        // Winding decides the true interior side of every outline wall —
+        // a centroid guess is wrong on L-shaped rooms.
+        var windingDoubled = 0.0
+        for index in 0..<points.count {
+            let a = points[index]
+            let b = points[(index + 1) % points.count]
+            windingDoubled += a.x * b.z - b.x * a.z
+        }
+        let windingSign: Double = windingDoubled > 0 ? 1 : -1
+
         // Doors, windows, and cased openings — on outline or interior walls.
         for opening in cornerRoom.openings {
             guard let host = cornerRoom.hostWall(for: opening) else { continue }
             let from = min(max(opening.offsetMeters, 0), host.length)
             let to = min(from + max(opening.widthMeters, 0.05), host.length)
             guard to > from else { continue }
+            let interiorNormal: CGPoint? = opening.interiorWallID == nil
+                ? CGPoint(x: windingSign * -host.uz, y: windingSign * host.ux)
+                : nil
 
             let kind: PlanSegment.Kind
             switch opening.kind {
@@ -231,7 +245,8 @@ struct FloorPlanModel {
                                         end: CGPoint(x: host.start.x + host.ux * to,
                                                      y: host.start.z + host.uz * to),
                                         hingeOnEnd: opening.hingeOnEnd ?? false,
-                                        swingsOutward: opening.swingsOutward ?? false))
+                                        swingsOutward: opening.swingsOutward ?? false,
+                                        interiorNormal: interiorNormal))
         }
 
         // Interior walls (partitions, closets).

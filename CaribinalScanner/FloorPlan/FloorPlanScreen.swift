@@ -53,6 +53,9 @@ struct FloorPlanScreen: View {
     @State private var assemblies = AssemblyStore.load()
     @State private var showingAssemblyName = false
     @State private var assemblyName = ""
+    @State private var arrangingRooms = false
+    @State private var arrangeDrag: (roomIndex: Int, baseline: [RoomEntry], planScale: CGFloat)?
+    @State private var walkModeActive = false
 
     // Markers
     @State private var markers: PlanMarkers
@@ -527,8 +530,11 @@ struct FloorPlanScreen: View {
         if cornerRoom == nil, canConvertManualPlan {
             return "Manual plans can't be drawn on — tap Make Editable to turn this one into an editable room."
         }
+        if arrangingRooms {
+            return "Arrange mode — drag a room to reposition it on the plan; the layout saves when you let go."
+        }
         if cornerRoom == nil, rooms.count > 1 {
-            return "Viewing all rooms — pick a room from the Room menu above to use the drawing tools."
+            return "Viewing all rooms — pick a room from the Room menu above to use the drawing tools, or tap Arrange to move rooms."
         }
         if eraserActive {
             return "Eraser on — tap a wall, door, window, or fixture to delete it."
@@ -601,6 +607,7 @@ struct FloorPlanScreen: View {
         draftDragActive = false
         editingWalls = false
         eraserActive = false
+        arrangingRooms = false
         // Clear free-rotate state so a stale fixture ID can't keep pinch
         // zoom and view rotation disabled after a room switch (QA-055).
         freeRotateFixtureID = nil
@@ -742,6 +749,16 @@ struct FloorPlanScreen: View {
                             }
                         } label: {
                             chip("Marker", "mappin.circle")
+                        }
+                        if cornerRoom == nil, rooms.count > 1 {
+                            Button {
+                                let wasOn = arrangingRooms
+                                cancelModes()
+                                arrangingRooms = !wasOn
+                            } label: {
+                                chip(arrangingRooms ? "Done" : "Arrange",
+                                     "rectangle.2.swap", active: arrangingRooms)
+                            }
                         }
                     }
                 } else if cornerRoom != nil {
@@ -1173,7 +1190,8 @@ struct FloorPlanScreen: View {
                                       updateOpeningSlide(id: id, world: world, commit: true)
                                   },
                                   cameraPose: cameraPose,
-                                  cameraPoseToken: cameraPoseToken)
+                                  cameraPoseToken: cameraPoseToken,
+                                  walkMode: walkModeActive)
                     .overlay(alignment: .topTrailing) {
                         // Compass poses are computed from corner-room
                         // geometry — hide them on a USDZ-only (LiDAR) scene
@@ -1183,6 +1201,19 @@ struct FloorPlanScreen: View {
                                 compassButton("Top", .top)
                                 compassButton("¾", .threeQuarter)
                                 compassButton("Front", .front)
+                                Button {
+                                    toggleWalkMode()
+                                } label: {
+                                    Image(systemName: "figure.walk")
+                                        .font(.caption.bold())
+                                        .frame(width: 46)
+                                        .padding(.vertical, 6)
+                                        .background(walkModeActive
+                                                    ? AnyShapeStyle(Color.accentColor.opacity(0.3))
+                                                    : AnyShapeStyle(.thinMaterial),
+                                                    in: Capsule())
+                                }
+                                .accessibilityLabel("Walkthrough mode")
                             }
                             .padding(8)
                         }
@@ -1756,6 +1787,25 @@ struct FloorPlanScreen: View {
     }
 
     private func handleDragChanged(_ value: DragGesture.Value, size: CGSize) {
+        // Arrange mode (All Rooms): drag a whole room to reposition it on
+        // the merged plan; the layout saves on release.
+        if viewMode == .plan, arrangingRooms, cornerRoom == nil, rooms.count > 1 {
+            if arrangeDrag == nil {
+                guard let start = planPoint(fromView: value.startLocation, size: size),
+                      let transform = PlanTransform(bounds: plan.bounds, size: size),
+                      let index = roomIndex(containing: start) else { return }
+                arrangeDrag = (index, rooms, transform.scale)
+            }
+            guard let drag = arrangeDrag else { return }
+            let delta = planDelta(value.translation, planScale: drag.planScale)
+            var updated = drag.baseline
+            updated[drag.roomIndex].room = drag.baseline[drag.roomIndex].room
+                .translated(dx: gridSnapped(Double(delta.x)), dz: gridSnapped(Double(delta.y)))
+            rooms = updated
+            if let merged = FloorPlanModel(rooms: updated.map(\.room)) { plan = merged }
+            dragReadout = "Moving \(updated[drag.roomIndex].name)"
+            return
+        }
         // Free-rotate locks the plan: the two-finger twist is driven by the
         // RotateGesture, so the simultaneous drag must not pan or hijack an
         // object, mirroring the MagnificationGesture guard (QA-022).
@@ -1932,6 +1982,17 @@ struct FloorPlanScreen: View {
     }
 
     private func handleDragEnded() {
+        if arrangeDrag != nil {
+            arrangeDrag = nil
+            dragReadout = nil
+            try? ScanStore.saveRooms(rooms, for: project)
+            if let dir = try? ScanStore.folder(for: project) {
+                try? Model3DBuilder.writeUSDZ(rooms: rooms.map(\.room),
+                                              to: dir.appendingPathComponent(ScanStore.usdzFileName))
+            }
+            editVersion += 1
+            return
+        }
         if draftDragActive {
             commitDraftWall()
             draftDragActive = false
@@ -2267,6 +2328,27 @@ struct FloorPlanScreen: View {
         )
     }
 
+    /// Which room's outline contains this merged-plan point (ray cast).
+    private func roomIndex(containing point: CGPoint) -> Int? {
+        for (index, entry) in rooms.enumerated() {
+            let corners = entry.room.corners
+            guard corners.count >= 3 else { continue }
+            var inside = false
+            var previous = corners.count - 1
+            for current in 0..<corners.count {
+                let a = corners[current]
+                let b = corners[previous]
+                if (a.z > Double(point.y)) != (b.z > Double(point.y)),
+                   Double(point.x) < (b.x - a.x) * (Double(point.y) - a.z) / (b.z - a.z) + a.x {
+                    inside.toggle()
+                }
+                previous = current
+            }
+            if inside { return index }
+        }
+        return nil
+    }
+
     /// Grid snap: coordinates land on clean tape-measure increments.
     private func gridSnapped(_ value: Double) -> Double {
         guard snapGridInches > 0 else { return value }
@@ -2324,6 +2406,27 @@ struct FloorPlanScreen: View {
                           SCNVector3(centerX, Float(height) * 0.45, centerZ))
         }
         cameraPoseToken += 1
+    }
+
+    /// Walk mode drops the camera to eye height inside the room; leaving
+    /// it returns to the presentation view.
+    private func toggleWalkMode() {
+        walkModeActive.toggle()
+        if walkModeActive {
+            let sceneRooms: [CornerRoom] = cornerRoom.map { [$0] } ?? rooms.map(\.room)
+            let allCorners = sceneRooms.flatMap(\.corners)
+            guard let minX = allCorners.map(\.x).min(),
+                  let maxX = allCorners.map(\.x).max(),
+                  let minZ = allCorners.map(\.z).min(),
+                  let maxZ = allCorners.map(\.z).max() else { return }
+            let centerX = Float((maxX - minX) / 2)
+            let centerZ = Float((maxZ - minZ) / 2)
+            cameraPose = (SCNVector3(centerX, 1.6, centerZ),
+                          SCNVector3(centerX, 1.5, centerZ - 3))
+            cameraPoseToken += 1
+        } else {
+            snapCamera(.threeQuarter)
+        }
     }
 
     private func placeAssembly(_ assembly: FixtureAssembly) {
@@ -3184,6 +3287,12 @@ struct FixtureEditorSheet: View {
                              meters: $fixture.widthMeters, imperial: imperial)
                 DimensionRow(label: isStairs ? "Stair width" : "Depth",
                              meters: $fixture.depthMeters, imperial: imperial)
+                if fixture.kind == .bulkhead {
+                    DimensionRow(label: "Drop below ceiling", meters: Binding(
+                        get: { fixture.dropMeters ?? 0.4 },
+                        set: { fixture.dropMeters = $0 }
+                    ), imperial: imperial)
+                }
                 if isStairs {
                     Section {
                         LabeledContent("Treads", value: "\(stepCount)")

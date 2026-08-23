@@ -26,11 +26,14 @@ enum ProjectBackup {
     enum BackupError: LocalizedError {
         case unreadable
         case writeFailed
+        case filesNotDownloaded(Int)
 
         var errorDescription: String? {
             switch self {
             case .unreadable: "That file isn't a readable project backup."
             case .writeFailed: "Could not write the backup file."
+            case .filesNotDownloaded(let count):
+                "\(count) file\(count == 1 ? " is" : "s are") still downloading from iCloud. Try again once the download finishes."
             }
         }
     }
@@ -61,12 +64,30 @@ enum ProjectBackup {
             manifestName: FileWrapper(regularFileWithContents: manifestData),
         ])
         let folderURL = try ScanStore.folder(for: project)
+        // A backup taken while files are still `.icloud` placeholders would
+        // silently package stubs instead of content — worthless exactly when
+        // it's needed. Refuse loudly (the check also kicks the downloads, so
+        // a retry succeeds once they land).
+        let placeholderCount = countPlaceholders(in: folderURL)
+        guard placeholderCount == 0 else {
+            throw BackupError.filesNotDownloaded(placeholderCount)
+        }
         // QA-014: a folder-wrapper failure must surface as an error, not a
         // silent manifest-only backup — the folder always exists here.
-        let folderWrapper = try FileWrapper(url: folderURL)
+        // Coordinated read: a consistent multi-file snapshot the sync
+        // daemon can't half-replace mid-wrap.
+        let folderWrapper = try coordinatedFolderWrapper(at: folderURL)
         // QA-038: never ship the AI chat transcript in a shared backup.
         if let chatWrapper = folderWrapper.fileWrappers?[ScanStore.aiChatFileName] {
             folderWrapper.removeFileWrapper(chatWrapper)
+        }
+        stripSyncArtifacts(from: folderWrapper, includingDataStubs: false)
+        // Belt over the pre-check: an eviction between countPlaceholders
+        // and the wrap would otherwise ship a silently incomplete backup.
+        let stubbed = remainingDataPlaceholders(in: folderWrapper)
+        guard stubbed == 0 else {
+            ScanStore.requestDownload(of: folderURL)
+            throw BackupError.filesNotDownloaded(stubbed)
         }
         folderWrapper.preferredFilename = folderKey
         container.addFileWrapper(folderWrapper)
@@ -116,6 +137,9 @@ enum ProjectBackup {
         project.folderName = UUID().uuidString
 
         if let folderWrapper = container.fileWrappers?[folderKey] {
+            // A backup made by an older build could carry sync artifacts;
+            // never restore those as literal files.
+            stripSyncArtifacts(from: folderWrapper, includingDataStubs: true)
             let destination = ScanStore.projectsRoot
                 .appendingPathComponent(project.folderName, isDirectory: true)
             try FileManager.default.createDirectory(at: ScanStore.projectsRoot,
@@ -127,5 +151,79 @@ enum ProjectBackup {
         context.insert(project)
         try context.save()
         return project
+    }
+
+    // MARK: - iCloud-aware helpers
+
+    /// Counts `.icloud` placeholder stubs for actual project data anywhere
+    /// in the folder — stubs for artifacts the export strips anyway
+    /// (quarantine/merge leftovers, the AI chat) don't block a backup —
+    /// and kicks off their download so a retry can succeed.
+    private static func countPlaceholders(in folder: URL) -> Int {
+        var count = 0
+        if let e = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: nil) {
+            for case let item as URL in e {
+                let name = item.lastPathComponent
+                guard ScanStore.isDataPlaceholderName(name),
+                      name != ".\(ScanStore.aiChatFileName).icloud" else { continue }
+                count += 1
+            }
+        }
+        if count > 0 { ScanStore.requestDownload(of: folder) }
+        return count
+    }
+
+    /// Counts data `.icloud` stubs that made it INTO the wrapper (post
+    /// stripSyncArtifacts, which removes only artifact stubs).
+    private static func remainingDataPlaceholders(in wrapper: FileWrapper) -> Int {
+        guard let children = wrapper.fileWrappers else { return 0 }
+        var count = 0
+        for (name, child) in children {
+            if name.hasSuffix(".icloud") {
+                count += 1
+            } else if child.isDirectory {
+                count += remainingDataPlaceholders(in: child)
+            }
+        }
+        return count
+    }
+
+    /// Reads the folder into a FileWrapper under file coordination, so the
+    /// snapshot can't interleave with an in-flight sync replacement.
+    /// `.immediate` forces contents to be read INSIDE the coordinated
+    /// block (FileWrapper is lazy by default, which would defer the actual
+    /// reads to serialization time — outside the lock); `.withoutMapping`
+    /// keeps them copies rather than mappings of files the daemon may
+    /// replace after the lock is released.
+    private static func coordinatedFolderWrapper(at folderURL: URL) throws -> FileWrapper {
+        var coordError: NSError?
+        var result: Result<FileWrapper, Error> = .failure(BackupError.writeFailed)
+        NSFileCoordinator(filePresenter: nil)
+            .coordinate(readingItemAt: folderURL, options: [], error: &coordError) { url in
+                result = Result { try FileWrapper(url: url, options: [.immediate, .withoutMapping]) }
+            }
+        if let coordError { throw coordError }
+        return try result.get()
+    }
+
+    /// Drops quarantine/merge leftovers and (per mode) iCloud placeholder
+    /// stubs from a folder wrapper, recursively — sync bookkeeping, not
+    /// project data. On EXPORT, data stubs are deliberately left in place
+    /// so `remainingDataPlaceholders` can refuse the hollow backup; on
+    /// IMPORT everything is stripped so stubs never restore as junk files.
+    private static func stripSyncArtifacts(from wrapper: FileWrapper, includingDataStubs: Bool) {
+        guard let children = wrapper.fileWrappers else { return }
+        for (name, child) in children {
+            let isArtifact = name.contains(".corrupt-") || name.contains(".pre-merge-")
+            let isStub = name.hasSuffix(".icloud")
+            let isStrippableStub = isStub && (includingDataStubs
+                || !ScanStore.isDataPlaceholderName(name)
+                || name == ".\(ScanStore.aiChatFileName).icloud")
+            if isArtifact || isStrippableStub {
+                wrapper.removeFileWrapper(child)
+            } else if child.isDirectory {
+                stripSyncArtifacts(from: child, includingDataStubs: includingDataStubs)
+            }
+        }
     }
 }

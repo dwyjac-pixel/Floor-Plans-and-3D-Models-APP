@@ -3,6 +3,23 @@ import simd
 import UIKit
 import Vision
 
+extension CGImagePropertyOrientation {
+    /// Vision needs the CG orientation matching UIImage's display rotation.
+    init(_ orientation: UIImage.Orientation) {
+        switch orientation {
+        case .up: self = .up
+        case .upMirrored: self = .upMirrored
+        case .down: self = .down
+        case .downMirrored: self = .downMirrored
+        case .left: self = .left
+        case .leftMirrored: self = .leftMirrored
+        case .right: self = .right
+        case .rightMirrored: self = .rightMirrored
+        @unknown default: self = .up
+        }
+    }
+}
+
 /// On-device AI for imported plans: reads the dimension labels printed on
 /// the drawing (38'-0", 7'-3½", 3.66 m) with the Vision framework, so the
 /// trace scale can be filled in automatically. Nothing leaves the device.
@@ -20,9 +37,11 @@ enum DimensionOCR {
             completion([])
             return
         }
-        // Vision reports pixels; the trace screen works in UIImage points.
-        let width = CGFloat(cgImage.width) / image.scale
-        let height = CGFloat(cgImage.height) / image.scale
+        // Orientation-applied point space — matches what the trace screen
+        // displays (camera photos are often stored rotated).
+        let orientation = CGImagePropertyOrientation(image.imageOrientation)
+        let width = image.size.width
+        let height = image.size.height
 
         let request = VNRecognizeTextRequest { request, _ in
             let observations = (request.results as? [VNRecognizedTextObservation]) ?? []
@@ -44,7 +63,8 @@ enum DimensionOCR {
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = false
         DispatchQueue.global(qos: .userInitiated).async {
-            try? VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([request])
+            try? VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:])
+                .perform([request])
         }
     }
 
@@ -109,8 +129,9 @@ enum PlanVision {
             completion(Analysis())
             return
         }
-        let width = CGFloat(cgImage.width) / image.scale
-        let height = CGFloat(cgImage.height) / image.scale
+        let orientation = CGImagePropertyOrientation(image.imageOrientation)
+        let width = image.size.width
+        let height = image.size.height
 
         let request = VNDetectContoursRequest()
         request.contrastAdjustment = 2.0
@@ -118,7 +139,7 @@ enum PlanVision {
         request.maximumImageDimension = 1024
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:])
             try? handler.perform([request])
             var analysis = Analysis()
             guard let observation = request.results?.first else {

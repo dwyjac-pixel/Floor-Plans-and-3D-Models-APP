@@ -1,11 +1,8 @@
 import SwiftUI
 
 /// Suite payback calculator: the owner's rent and cost numbers against the
-/// project estimate, live. Inputs persist per project (roi.json).
-///
-/// Note: ROI & payback now also live inside `DealAnalyzerScreen` (the "ROI &
-/// Payback" section for rental/BRRRR), which shares this same roi.json store.
-/// This standalone screen is retained but is no longer a primary destination.
+/// project estimate, live. Inputs persist per project (roi.json). Reached
+/// from the dashboard's Investment card as "Suite ROI & Payback".
 struct ROIScreen: View {
     let project: RenovationProject
     let estimateMidpoint: Double?
@@ -71,11 +68,6 @@ struct ROIScreen: View {
                     }
                     LabeledContent("Annual yield") {
                         Text(String(format: "%.1f%%", result.annualYieldPercent)).bold()
-                    }
-                    LabeledContent("10-year position") {
-                        Text(Money.format(result.tenYearPosition))
-                            .bold()
-                            .foregroundStyle(result.tenYearPosition >= 0 ? .green : .red)
                     }
                 }
             }

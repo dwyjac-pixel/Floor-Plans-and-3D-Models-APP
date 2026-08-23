@@ -116,6 +116,7 @@ struct CornerRoom: Codable {
             case furnace = "Furnace"
             case waterHeater = "Water Heater"
             case stairs = "Stairs"
+            case bulkhead = "Bulkhead (Dropped Ceiling)"
 
             var id: String { rawValue }
 
@@ -133,7 +134,7 @@ struct CornerRoom: Codable {
                 case .baseCabinets, .upperCabinets, .island, .fridge, .stove: .kitchen
                 case .toilet, .vanity, .tubShower, .shower: .bathroom
                 case .bedQueen, .bedSingle, .dresser, .sofa: .bedroomLiving
-                case .washer, .dryer, .furnace, .waterHeater, .stairs: .utility
+                case .washer, .dryer, .furnace, .waterHeater, .stairs, .bulkhead: .utility
                 }
             }
 
@@ -154,6 +155,7 @@ struct CornerRoom: Codable {
                 case .furnace: "flame"
                 case .waterHeater: "water.waves"
                 case .stairs: "stairs"
+                case .bulkhead: "arrow.down.to.line"
                 }
             }
 
@@ -176,6 +178,7 @@ struct CornerRoom: Codable {
                 case .furnace: "Furnace"
                 case .waterHeater: "WH"
                 case .stairs: "Stairs"
+                case .bulkhead: "Bulkhead"
                 }
             }
 
@@ -199,6 +202,7 @@ struct CornerRoom: Codable {
                 case .furnace: (0.71, 0.91)
                 case .waterHeater: (0.61, 0.61)
                 case .stairs: (3.0, 0.91)
+                case .bulkhead: (2.4, 0.6)
                 }
             }
         }
@@ -210,6 +214,7 @@ struct CornerRoom: Codable {
         var widthMeters: Double
         var depthMeters: Double
         var rotationDegrees: Double = 0
+        var dropMeters: Double?   // bulkheads: how far below the ceiling
     }
 
     /// Host geometry for an opening — outline wall or interior wall.
@@ -320,7 +325,7 @@ extension CornerRoom.Opening {
 
 extension CornerRoom.Fixture {
     private enum CodingKeys: String, CodingKey {
-        case id, kind, x, z, widthMeters, depthMeters, rotationDegrees
+        case id, kind, x, z, widthMeters, depthMeters, rotationDegrees, dropMeters
     }
 
     init(from decoder: Decoder) throws {
@@ -332,6 +337,7 @@ extension CornerRoom.Fixture {
                   z: try c.decodeIfPresent(Double.self, forKey: .z) ?? 0,
                   widthMeters: try c.decodeIfPresent(Double.self, forKey: .widthMeters) ?? kind.defaultSize.width,
                   depthMeters: try c.decodeIfPresent(Double.self, forKey: .depthMeters) ?? kind.defaultSize.depth,
-                  rotationDegrees: try c.decodeIfPresent(Double.self, forKey: .rotationDegrees) ?? 0)
+                  rotationDegrees: try c.decodeIfPresent(Double.self, forKey: .rotationDegrees) ?? 0,
+                  dropMeters: try c.decodeIfPresent(Double.self, forKey: .dropMeters))
     }
 }

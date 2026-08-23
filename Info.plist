@@ -13,6 +13,25 @@
 	     backups/reports in the Files app. -->
 	<key>UIFileSharingEnabled</key>
 	<true/>
+	<!-- CloudKit sync: silent pushes wake the app so SwiftData merges remote
+	     changes; NSUbiquitousContainers keeps the project-files folder visible
+	     in the Files app under iCloud Drive after storage moves there. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+	<key>NSUbiquitousContainers</key>
+	<dict>
+		<key>iCloud.com.caribinalcreations.scanner</key>
+		<dict>
+			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
+			<true/>
+			<key>NSUbiquitousContainerSupportedFolderLevels</key>
+			<string>Any</string>
+			<key>NSUbiquitousContainerName</key>
+			<string>Caribinal Scanner</string>
+		</dict>
+	</dict>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

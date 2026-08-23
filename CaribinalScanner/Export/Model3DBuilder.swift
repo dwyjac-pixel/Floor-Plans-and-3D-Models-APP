@@ -514,6 +514,11 @@ enum Model3DBuilder {
                 addBox(width: w, depth: d, boxHeight: 0.45, yCenter: 0.225, material: cabinetMaterial)
                 addBox(width: w, depth: 0.22, boxHeight: 0.85, yCenter: 0.425,
                        zOffset: -d / 2 + 0.11, material: cabinetMaterial)
+            case .bulkhead:
+                // Hangs from the ceiling — the duct chase every basement has.
+                let drop = min(max(fixture.dropMeters ?? 0.4, 0.1), height - 0.3)
+                addBox(width: w, depth: d, boxHeight: drop, yCenter: height - drop / 2,
+                       material: wallMaterial)
             case .stairs:
                 let stepCount = max(3, Int(w / 0.25))
                 let tread = w / Double(stepCount)
@@ -682,22 +687,24 @@ enum Model3DBuilder {
         guard let scene = makeScene(rooms: rooms, useImperial: true, withLabels: false) else {
             throw BuildError.notEnoughCorners
         }
-        // Write to a sibling temp file (kept a .usdz so SceneKit picks the
-        // USDZ writer), then atomically swap it into place — a reader or a
+        // Write to a temp file (kept a .usdz so SceneKit picks the USDZ
+        // writer), then atomically swap it into place — a reader or a
         // coalesced later write never sees a half-written model, and a
-        // failed write leaves no partial file behind.
-        let tempURL = url.deletingLastPathComponent()
+        // failed write leaves no partial file behind. The temp lives in
+        // Caches, NOT beside the destination: the destination folder may be
+        // inside the iCloud container, where the sync daemon would start
+        // uploading a half-written sibling temp.
+        let tempURL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("\(UUID().uuidString).tmp.usdz")
         guard scene.write(to: tempURL, options: nil, delegate: nil, progressHandler: nil) else {
             try? FileManager.default.removeItem(at: tempURL)
             throw BuildError.exportFailed
         }
         do {
-            if FileManager.default.fileExists(atPath: url.path) {
-                _ = try FileManager.default.replaceItemAt(url, withItemAt: tempURL)
-            } else {
-                try FileManager.default.moveItem(at: tempURL, to: url)
-            }
+            // Coordinated swap: the destination may live in the iCloud
+            // container, and this also clears an undownloaded placeholder
+            // wearing the destination name.
+            try ScanStore.coordinatedReplace(at: url, withItemAt: tempURL)
         } catch {
             try? FileManager.default.removeItem(at: tempURL)
             throw BuildError.exportFailed

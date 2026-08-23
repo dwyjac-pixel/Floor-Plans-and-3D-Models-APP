@@ -384,8 +384,6 @@ enum PDFExporter {
                     y = drawKeyValueRow(label: "Payback", value: roi.paybackText, y: y)
                     y = drawKeyValueRow(label: "Annual yield",
                                         value: String(format: "%.1f%%", roi.annualYieldPercent), y: y)
-                    y = drawKeyValueRow(label: "10-year position",
-                                        value: Money.format(roi.tenYearPosition), y: y)
                     y += 12
                     _ = drawText("Planning math only — not financial advice. Verify local rents, taxes, and financing.",
                                  font: .italicSystemFont(ofSize: 9), color: .gray, y: y)
