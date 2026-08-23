@@ -8,6 +8,7 @@ struct NewProjectSheet: View {
     @State private var name = ""
     @State private var clientName = ""
     @State private var address = ""
+    @State private var postalCode = ""
     @State private var phone = ""
     @State private var email = ""
     @State private var projectType = "Basement Development"
@@ -26,6 +27,9 @@ struct NewProjectSheet: View {
                 Section("Client") {
                     TextField("Client name", text: $clientName)
                     TextField("Property address", text: $address)
+                    TextField("Postal / ZIP code", text: $postalCode)
+                        .textInputAutocapitalization(.characters)
+                        .autocorrectionDisabled()
                     TextField("Phone", text: $phone)
                         .keyboardType(.phonePad)
                     TextField("Email", text: $email)
@@ -51,6 +55,7 @@ struct NewProjectSheet: View {
                             email: email,
                             projectType: projectType
                         )
+                        project.postalCode = postalCode.trimmingCharacters(in: .whitespaces).uppercased()
                         modelContext.insert(project)
                         dismiss()
                     }

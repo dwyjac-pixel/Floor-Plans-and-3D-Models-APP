@@ -239,7 +239,8 @@ enum Model3DBuilder {
         let centroidX = points.map(\.x).reduce(0, +) / Double(points.count)
         let centroidZ = points.map(\.z).reduce(0, +) / Double(points.count)
 
-        let wallMaterial = pbrMaterial(UIColor(red: 0.93, green: 0.92, blue: 0.90, alpha: 1),
+        let wallMaterial = pbrMaterial(AppSettings.wall3DUIColor
+                                        ?? UIColor(red: 0.93, green: 0.92, blue: 0.90, alpha: 1),
                                        roughness: 0.85, doubleSided: true)
         let trimMaterial = pbrMaterial(UIColor(white: 0.95, alpha: 1), roughness: 0.35)
 

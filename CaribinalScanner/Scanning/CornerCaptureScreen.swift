@@ -37,7 +37,8 @@ struct CornerCaptureScreen: View {
         if existingCeiling <= 0 {
             existingCeiling = ScanStore.loadManualRoom(for: project)?.ceilingHeightMeters ?? 0
         }
-        _ceilingMeters = State(initialValue: existingCeiling > 0 ? existingCeiling : 2.4)
+        _ceilingMeters = State(initialValue: existingCeiling > 0 ? existingCeiling
+                                                                 : AppSettings.defaultCeilingMeters)
     }
 
     var body: some View {
@@ -132,7 +133,7 @@ struct CornerCaptureScreen: View {
                         .accessibilityHidden(true)
                     Text("Camera access is turned off")
                         .font(.headline)
-                    Text("Corner capture needs the camera. Turn it on in Settings → CaribinalScanner → Camera, then come back.")
+                    Text("Corner capture needs the camera. Turn it on in Settings → Reno Planner → Camera, then come back.")
                         .font(.subheadline)
                         .multilineTextAlignment(.center)
                     Button("Open Settings") {

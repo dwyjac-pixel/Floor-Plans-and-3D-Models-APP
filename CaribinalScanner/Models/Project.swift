@@ -14,6 +14,7 @@ final class RenovationProject {
     var name: String = ""
     var clientName: String = ""
     var address: String = ""
+    var postalCode: String = ""
     var phone: String = ""
     var email: String = ""
     var projectType: String = "Basement Development"

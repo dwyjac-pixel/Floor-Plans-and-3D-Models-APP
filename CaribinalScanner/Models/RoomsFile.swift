@@ -8,12 +8,50 @@ struct RoomEntry: Codable, Identifiable {
     var id = UUID()
     var name: String
     var room: CornerRoom
+    /// Storey this room belongs to; nil (all pre-floors saves) means the
+    /// default floor, so old rooms.json files load unchanged.
+    var floorName: String?
+}
+
+extension RoomEntry {
+    static let defaultFloorName = "Main Floor"
+    var floorDisplayName: String { floorName ?? Self.defaultFloorName }
 }
 
 /// Container for rooms.json — wrapped in a struct so future project-level
 /// fields can ride along without a format break.
 struct RoomsFile: Codable {
     var rooms: [RoomEntry] = []
+}
+
+extension RoomsFile {
+    /// Translates a batch of rooms that already share one coordinate space
+    /// (a continuous multi-room scan walk) as a single unit: mutual
+    /// positions — shared walls, hallways, true relative layout — are
+    /// preserved exactly; only the group as a whole is moved beside the
+    /// existing plan so it can't land on top of earlier rooms.
+    static func placeGroup(_ group: [CornerRoom],
+                           alongside existing: [RoomEntry]) -> [CornerRoom] {
+        guard !group.isEmpty else { return group }
+        var minX = Double.infinity
+        var minZ = Double.infinity
+        for room in group {
+            guard let bounds = room.planBounds else { continue }
+            minX = min(minX, bounds.minX)
+            minZ = min(minZ, bounds.minZ)
+        }
+        guard minX.isFinite, minZ.isFinite else { return group }
+        var existingMaxX = -Double.infinity
+        var existingMinZ = Double.infinity
+        for entry in existing {
+            guard let bounds = entry.room.planBounds else { continue }
+            existingMaxX = max(existingMaxX, bounds.maxX)
+            existingMinZ = min(existingMinZ, bounds.minZ)
+        }
+        let dx = existingMaxX.isFinite ? existingMaxX + 0.5 - minX : -minX
+        let dz = existingMinZ.isFinite ? existingMinZ - minZ : -minZ
+        return group.map { $0.translated(dx: dx, dz: dz) }
+    }
 }
 
 /// A user-saved group of fixtures ("Standard 3-pc bath") reusable across

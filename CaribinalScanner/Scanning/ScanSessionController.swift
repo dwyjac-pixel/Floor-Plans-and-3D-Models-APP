@@ -36,9 +36,17 @@ final class ScanSessionController: NSObject, ObservableObject, RoomCaptureViewDe
     @Published var didFail = false
     @Published var isProcessing = false
     @Published var errorMessage: String?
+    /// Rooms banked earlier in this walk (continuous multi-room scanning).
+    @Published var capturedRooms: [CapturedRoom] = []
 
     private(set) var finishedRoom: CapturedRoom?
     private var processingWatchdog: Task<Void, Never>?
+
+    /// Every room from this walk, including the one currently presented.
+    var walkRooms: [CapturedRoom] {
+        if let finishedRoom { return capturedRooms + [finishedRoom] }
+        return capturedRooms
+    }
 
     let captureView: RoomCaptureView
 
@@ -75,7 +83,9 @@ final class ScanSessionController: NSObject, ObservableObject, RoomCaptureViewDe
 
     func finish() {
         isProcessing = true
-        captureView.captureSession.stop()
+        // Keep the AR session alive: a follow-up room then shares this
+        // room's coordinate space, so a whole floor scans as one walk.
+        captureView.captureSession.stop(pauseARSession: false)
         // RoomPlan occasionally never delivers didPresent (e.g. the session
         // died mid-scan) — without a watchdog the UI spins forever.
         processingWatchdog?.cancel()
@@ -92,6 +102,23 @@ final class ScanSessionController: NSObject, ObservableObject, RoomCaptureViewDe
     func cancel() {
         processingWatchdog?.cancel()
         captureView.captureSession.stop()
+    }
+
+    /// Banks the room just presented and immediately resumes scanning in
+    /// the same AR world — the next room lands in the same coordinates.
+    func scanNextRoom() {
+        ScanDebugLog.log("scanNextRoom(): banking room \(capturedRooms.count + 1)")
+        if let finishedRoom { capturedRooms.append(finishedRoom) }
+        finishedRoom = nil
+        didFinish = false
+        didFail = false
+        isProcessing = false
+        errorMessage = nil
+        processingWatchdog?.cancel()
+        var configuration = RoomCaptureSession.Configuration()
+        configuration.isCoachingEnabled = true
+        captureView.captureSession.run(configuration: configuration)
+        ScanDebugLog.log("scanNextRoom(): session resumed")
     }
 
     private func fail(with error: Error) {

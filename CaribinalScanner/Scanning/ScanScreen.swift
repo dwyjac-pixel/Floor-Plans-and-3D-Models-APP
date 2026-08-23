@@ -12,6 +12,10 @@ struct ScanScreen: View {
     @StateObject private var controller = ScanSessionController()
     @State private var isSaving = false
     @State private var saveError: String?
+    @State private var dismissOnAlertClose = false
+    @State private var showingFloorChoice = false
+    @State private var showingCustomFloor = false
+    @State private var customFloorName = ""
 
     var body: some View {
         ZStack {
@@ -49,6 +53,24 @@ struct ScanScreen: View {
         } message: {
             Text(saveError ?? controller.errorMessage ?? "Something went wrong.")
         }
+        .confirmationDialog("Which floor is this?", isPresented: $showingFloorChoice,
+                            titleVisibility: .visible) {
+            ForEach([RoomEntry.defaultFloorName, "Basement", "Second Floor", "Garage"], id: \.self) { floor in
+                Button(floor) { save(floorName: floor) }
+            }
+            Button("Other Floor…") { showingCustomFloor = true }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The rooms from this walk are converted to an editable floor plan and tagged with the floor you pick.")
+        }
+        .alert("Floor Name", isPresented: $showingCustomFloor) {
+            TextField("e.g. Third Floor, Suite B", text: $customFloorName)
+            Button("Save") {
+                let name = customFloorName.trimmingCharacters(in: .whitespaces)
+                save(floorName: name.isEmpty ? RoomEntry.defaultFloorName : name)
+            }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 
     @ViewBuilder
@@ -60,13 +82,27 @@ struct ScanScreen: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(isSaving ? "Saving" : "Processing scan")
         } else if controller.didFinish {
-            HStack(spacing: 12) {
-                Button("Rescan") { controller.start() }
-                    .buttonStyle(.bordered)
-                    .accessibilityHint("Discards this scan and starts a new one")
-                Button("Save Scan") { save() }
+            VStack(spacing: 10) {
+                if !controller.capturedRooms.isEmpty {
+                    Text("\(controller.walkRooms.count) rooms captured this walk")
+                        .font(.callout.weight(.medium))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background(.thinMaterial, in: Capsule())
+                }
+                HStack(spacing: 12) {
+                    Button("Rescan") { controller.start() }
+                        .buttonStyle(.bordered)
+                        .accessibilityHint("Discards this room's scan and redoes it")
+                    Button("Scan Next Room") { controller.scanNextRoom() }
+                        .buttonStyle(.bordered)
+                        .accessibilityHint("Keeps this room and continues scanning the next one in the same walk")
+                    Button(controller.capturedRooms.isEmpty ? "Save" : "Finish Floor") {
+                        showingFloorChoice = true
+                    }
                     .buttonStyle(.borderedProminent)
-                    .accessibilityHint("Adds the scanned room to the project")
+                    .accessibilityHint("Converts every room from this walk into the floor plan")
+                }
             }
             .padding(.bottom, 8)
         } else if controller.didFail {
@@ -95,19 +131,26 @@ struct ScanScreen: View {
                 if !presented {
                     saveError = nil
                     controller.errorMessage = nil
+                    if dismissOnAlertClose {
+                        dismissOnAlertClose = false
+                        dismiss()
+                    }
                 }
             }
         )
     }
 
-    private func save() {
-        guard let room = controller.finishedRoom else { return }
+    /// Saves every room from this walk: raw scan data, auto-converted
+    /// editable rooms tagged with the chosen floor, and the merged walk
+    /// USDZ. One room or ten — same path.
+    private func save(floorName: String) {
+        let rooms = controller.walkRooms
+        guard !rooms.isEmpty else { return }
         isSaving = true
-        // QA-012: `folder(for:)` reads `project.folderName` — a SwiftData
-        // @Model property — so resolve the project's directory URL here on the
-        // main actor and hand only the plain URL to the detached task. Nothing
-        // inside the task touches the model, so there's no cross-thread @Model
-        // read. The heavy encode/USDZ export still runs off the main actor.
+        // QA-012: resolve the project's directory and load existing state
+        // here on the main actor; the detached task gets plain values and
+        // never reads the SwiftData @Model. The heavy conversion and USDZ
+        // work still runs off the main actor.
         let dir: URL
         do {
             dir = try ScanStore.folder(for: project)
@@ -116,40 +159,29 @@ struct ScanScreen: View {
             isSaving = false
             return
         }
-        // The USDZ export can take seconds — keep it off the main actor so
-        // the "Saving…" spinner actually spins.
+        let existingRooms = ScanStore.loadRooms(for: project)
+        let existingWalks = ScanStore.loadScanWalks(for: project)
         Task.detached(priority: .userInitiated) {
             do {
-                // Mirrors ScanStore.save(capturedRoom:for:), but writes into a
-                // directory resolved on the main actor (QA-012) so the detached
-                // work never reads the SwiftData @Model. room.json is written
-                // first so a fragile USDZ export can't lose the scan.
-                let data = try JSONEncoder().encode(room)
-                try ScanStore.coordinatedWrite(data,
-                                               to: dir.appendingPathComponent(ScanStore.roomDataFileName))
-                // Export to a Caches temp and swap under coordination —
-                // dir may be inside the iCloud container, where a direct
-                // multi-second export would race the sync daemon.
-                let usdz = dir.appendingPathComponent(ScanStore.lidarUSDZFileName)
-                let temp = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-                    .appendingPathComponent("\(UUID().uuidString).tmp.usdz")
-                do {
-                    do {
-                        try room.export(to: temp, exportOptions: .parametric)
-                    } catch {
-                        try room.export(to: temp, exportOptions: .mesh)
-                    }
-                    try ScanStore.coordinatedReplace(at: usdz, withItemAt: temp)
-                } catch {
-                    // Export failed — drop the temp and any stale USDZ (QA-048).
-                    try? FileManager.default.removeItem(at: temp)
-                    ScanStore.coordinatedDelete(at: usdz)
-                }
+                let result = try await ScanStore.saveScanWalk(rooms: rooms,
+                                                              floorName: floorName,
+                                                              existingRooms: existingRooms,
+                                                              existingWalks: existingWalks,
+                                                              directory: dir)
                 await MainActor.run {
                     controller.cancel()
                     project.scanDate = .now
                     try? modelContext.save()
-                    dismiss()
+                    if result.failed > 0 {
+                        isSaving = false
+                        dismissOnAlertClose = result.added > 0
+                        let added = result.added == 1 ? "1 room" : "\(result.added) rooms"
+                        saveError = result.added > 0
+                            ? "\(added) added to \(floorName). \(result.failed) couldn't build a clean outline — rescan that one with a slower walk-through."
+                            : "This room couldn't build a clean outline — try rescanning with a slower walk-through. The raw scan data was kept."
+                    } else {
+                        dismiss()
+                    }
                 }
             } catch {
                 await MainActor.run {

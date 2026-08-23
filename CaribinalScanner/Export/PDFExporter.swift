@@ -32,25 +32,35 @@ enum PDFExporter {
         // Traced-room label centroids don't share the LiDAR plan's ARKit
         // coordinate space — suppress them on scanned plans.
         let labelRooms = ScanStore.roomDataURL(for: project) != nil ? [] : ScanStore.loadRooms(for: project)
-        let reportRoomLabels: [(name: String, area: String, center: CGPoint)] = labelRooms.compactMap { entry in
-            guard entry.room.corners.count >= 3 else { return nil }
-            let count = Double(entry.room.corners.count)
-            return (entry.name,
-                    Measure.area(entry.room.floorAreaSquareMeters, imperial: useImperial),
-                    CGPoint(x: entry.room.corners.map(\.x).reduce(0, +) / count,
-                            y: entry.room.corners.map(\.z).reduce(0, +) / count))
+        let reportRoomLabels = roomLabels(for: labelRooms, useImperial: useImperial)
+        // One plan image per storey when the captured rooms span multiple
+        // floors (LiDAR plans — labelRooms empty — keep the single image).
+        // Any floor that fails to build falls the whole report back to the
+        // merged image rather than silently dropping a storey.
+        let floorNames = orderedFloorNames(of: labelRooms)
+        var floorSections: [(name: String, image: UIImage, plan: FloorPlanModel, rooms: [RoomEntry])] = []
+        if floorNames.count > 1 {
+            for floorName in floorNames {
+                let floorRooms = labelRooms.filter { $0.floorDisplayName == floorName }
+                guard let floorPlan = FloorPlanModel(rooms: floorRooms.map(\.room)),
+                      let image = renderPlanImage(plan: floorPlan,
+                                                  labels: roomLabels(for: floorRooms, useImperial: useImperial),
+                                                  markers: reportMarkers,
+                                                  layers: layers,
+                                                  useImperial: useImperial,
+                                                  side: 500, scale: 2) else { continue }
+                floorSections.append((floorName, image, floorPlan, floorRooms))
+            }
+            if floorSections.count != floorNames.count { floorSections = [] }
         }
         var planImage: UIImage?
-        if let plan {
-            let renderer = ImageRenderer(content:
-                FloorPlanCanvas(plan: plan, useImperial: useImperial, markers: reportMarkers,
-                                roomLabels: reportRoomLabels, layers: layers, exportBackground: true)
-                    .frame(width: 500, height: 500)
-                    .background(Color.white)
-                    .environment(\.colorScheme, .light)
-            )
-            renderer.scale = 2
-            planImage = renderer.uiImage
+        if floorSections.isEmpty, let plan {
+            planImage = renderPlanImage(plan: plan,
+                                        labels: reportRoomLabels,
+                                        markers: reportMarkers,
+                                        layers: layers,
+                                        useImperial: useImperial,
+                                        side: 500, scale: 2)
         }
 
         let captions = ScanStore.loadPhotoCaptions(for: project)
@@ -157,7 +167,7 @@ enum PDFExporter {
                 for fact in facts {
                     y = drawText(fact, font: .systemFont(ofSize: 13), y: y + 2)
                 }
-                drawCentered("Prepared with Caribinal Scanner — \(profile.businessName)", attributes: [
+                drawCentered("Prepared with Interior AI Reno Planner — \(profile.businessName)", attributes: [
                     .font: UIFont.systemFont(ofSize: 9),
                     .foregroundColor: UIColor.gray,
                 ], y: pageRect.height - 48)
@@ -187,29 +197,31 @@ enum PDFExporter {
 
                 // MARK: Floor plan
 
-                if let planImage, let plan {
-                    y = beginContentPage("Floor Plan")
+                @MainActor func drawFloorPlanSection(title: String,
+                                                     image: UIImage,
+                                                     sectionPlan: FloorPlanModel,
+                                                     sectionRooms: [RoomEntry]) {
+                    y = beginContentPage(title)
                     let imageSide: CGFloat = 400
                     let imageRect = CGRect(x: (pageRect.width - imageSide) / 2, y: y + 4,
                                            width: imageSide, height: imageSide)
-                    planImage.draw(in: imageRect)
+                    image.draw(in: imageRect)
                     y = imageRect.maxY + 10
-                    for item in plan.summaryItems(useImperial: useImperial) {
+                    for item in sectionPlan.summaryItems(useImperial: useImperial) {
                         if y > pageRect.height - 80 {
-                            y = beginContentPage("Floor Plan (continued)")
+                            y = beginContentPage("\(title) (continued)")
                         }
                         y = drawKeyValueRow(label: item.label, value: item.value, y: y)
                     }
-                    let roomEntries = ScanStore.loadRooms(for: project)
-                    if roomEntries.count > 1 {
+                    if sectionRooms.count > 1 {
                         y += 8
                         if y > pageRect.height - 80 {
-                            y = beginContentPage("Floor Plan (continued)")
+                            y = beginContentPage("\(title) (continued)")
                         }
                         y = drawText("Rooms", font: .boldSystemFont(ofSize: 13), color: brand, y: y)
-                        for entry in roomEntries {
+                        for entry in sectionRooms {
                             if y > pageRect.height - 80 {
-                                y = beginContentPage("Floor Plan (continued)")
+                                y = beginContentPage("\(title) (continued)")
                             }
                             y = drawKeyValueRow(label: entry.name,
                                                 value: Measure.area(entry.room.floorAreaSquareMeters,
@@ -217,30 +229,30 @@ enum PDFExporter {
                                                 y: y)
                         }
                     }
-                    if let correction = roomEntries.compactMap(\.room.verifiedAccuracyPercent).max() {
+                    if let correction = sectionRooms.compactMap(\.room.verifiedAccuracyPercent).max() {
                         if y > pageRect.height - 80 {
-                            y = beginContentPage("Floor Plan (continued)")
+                            y = beginContentPage("\(title) (continued)")
                         }
                         y = drawText(String(format: "Tape-verified: plan scaled to an on-site measurement (%.1f%% correction applied).", correction),
                                      font: .italicSystemFont(ofSize: 9), color: .gray, y: y + 4)
                     }
-                    if !plan.walls.isEmpty {
+                    if !sectionPlan.walls.isEmpty {
                         y += 8
                         if y > pageRect.height - 80 {
-                            y = beginContentPage("Floor Plan (continued)")
+                            y = beginContentPage("\(title) (continued)")
                         }
                         y = drawText("Wall lengths", font: .boldSystemFont(ofSize: 13), color: brand, y: y)
                         let attrs: [NSAttributedString.Key: Any] = [
                             .font: UIFont.systemFont(ofSize: 10),
                             .foregroundColor: UIColor.darkGray,
                         ]
-                        let wallTexts = plan.walls.enumerated().map {
+                        let wallTexts = sectionPlan.walls.enumerated().map {
                             "Wall \($0.offset + 1): \(Measure.length($0.element.lengthMeters, imperial: useImperial))"
                         }
                         var index = 0
                         while index < wallTexts.count {
                             if y > pageRect.height - 60 {
-                                y = beginContentPage("Floor Plan (continued)")
+                                y = beginContentPage("\(title) (continued)")
                             }
                             (wallTexts[index] as NSString)
                                 .draw(at: CGPoint(x: margin, y: y), withAttributes: attrs)
@@ -256,6 +268,20 @@ enum PDFExporter {
                         _ = drawText("Measurements are approximate. Verify critical dimensions on site.",
                                      font: .italicSystemFont(ofSize: 9), color: .gray, y: y + 6)
                     }
+                }
+
+                if !floorSections.isEmpty {
+                    for section in floorSections {
+                        drawFloorPlanSection(title: "Floor Plan — \(section.name)",
+                                             image: section.image,
+                                             sectionPlan: section.plan,
+                                             sectionRooms: section.rooms)
+                    }
+                } else if let planImage, let plan {
+                    drawFloorPlanSection(title: "Floor Plan",
+                                         image: planImage,
+                                         sectionPlan: plan,
+                                         sectionRooms: ScanStore.loadRooms(for: project))
                 }
 
                 // MARK: Proposed development
@@ -480,24 +506,37 @@ enum PDFExporter {
         let profile = BusinessProfile.load()
         let rooms = ScanStore.loadRooms(for: project)
         let reportMarkers = ScanStore.loadMarkers(for: project)?.markers ?? []
-        let roomLabels: [(name: String, area: String, center: CGPoint)] = rooms.compactMap { entry in
-            guard entry.room.corners.count >= 3 else { return nil }
-            let count = Double(entry.room.corners.count)
-            return (entry.name,
-                    Measure.area(entry.room.floorAreaSquareMeters, imperial: useImperial),
-                    CGPoint(x: entry.room.corners.map(\.x).reduce(0, +) / count,
-                            y: entry.room.corners.map(\.z).reduce(0, +) / count))
-        }
 
         let canvasSide: CGFloat = 640
-        let renderer = ImageRenderer(content:
-            FloorPlanCanvas(plan: plan, useImperial: useImperial, markers: reportMarkers,
-                            roomLabels: roomLabels, layers: layers, exportBackground: true)
-                .frame(width: canvasSide, height: canvasSide)
-                .background(Color.white)
-                .environment(\.colorScheme, .light))
-        renderer.scale = 3
-        guard let planImage = renderer.uiImage else { return nil }
+        // One plan sheet per storey when the rooms span multiple floors. Any
+        // floor that fails to build falls the package back to the merged
+        // sheet rather than silently dropping a storey.
+        let floorNames = orderedFloorNames(of: rooms)
+        var floorSheets: [(name: String, image: UIImage, plan: FloorPlanModel)] = []
+        if floorNames.count > 1 {
+            for floorName in floorNames {
+                let floorRooms = rooms.filter { $0.floorDisplayName == floorName }
+                guard let floorPlan = FloorPlanModel(rooms: floorRooms.map(\.room)),
+                      let image = renderPlanImage(plan: floorPlan,
+                                                  labels: roomLabels(for: floorRooms, useImperial: useImperial),
+                                                  markers: reportMarkers,
+                                                  layers: layers,
+                                                  useImperial: useImperial,
+                                                  side: canvasSide, scale: 3) else { continue }
+                floorSheets.append((floorName, image, floorPlan))
+            }
+            if floorSheets.count != floorNames.count { floorSheets = [] }
+        }
+        var mergedPlanImage: UIImage?
+        if floorSheets.isEmpty {
+            guard let image = renderPlanImage(plan: plan,
+                                              labels: roomLabels(for: rooms, useImperial: useImperial),
+                                              markers: reportMarkers,
+                                              layers: layers,
+                                              useImperial: useImperial,
+                                              side: canvasSide, scale: 3) else { return nil }
+            mergedPlanImage = image
+        }
 
         let generatedDate = Date.now.formatted(date: .abbreviated, time: .omitted)
         let safeName = project.name
@@ -563,37 +602,49 @@ enum PDFExporter {
                                   width: border.width, height: border.height - blockHeight)
                 }
 
-                // Sheet 1 — floor plan with north arrow and scale note.
-                let planContent = beginSheet("FLOOR PLAN")
-                let fitted = aspectFit(imageSize: planImage.size,
-                                       in: planContent.insetBy(dx: 14, dy: 16))
-                planImage.draw(in: fitted)
+                // Sheet 1 — floor plan with north arrow and scale note; one
+                // sheet per storey when the project spans multiple floors.
+                @MainActor func drawPlanSheet(title: String, image: UIImage, sheetPlan: FloorPlanModel) {
+                    let planContent = beginSheet(title)
+                    let fitted = aspectFit(imageSize: image.size,
+                                           in: planContent.insetBy(dx: 14, dy: 16))
+                    image.draw(in: fitted)
 
-                let northCenter = CGPoint(x: planContent.maxX - 36, y: planContent.minY + 42)
-                UIColor.black.setStroke()
-                let circle = UIBezierPath(ovalIn: CGRect(x: northCenter.x - 13, y: northCenter.y - 13,
-                                                         width: 26, height: 26))
-                circle.lineWidth = 1
-                circle.stroke()
-                let arrow = UIBezierPath()
-                arrow.move(to: CGPoint(x: northCenter.x, y: northCenter.y + 8))
-                arrow.addLine(to: CGPoint(x: northCenter.x, y: northCenter.y - 7))
-                arrow.addLine(to: CGPoint(x: northCenter.x - 4, y: northCenter.y - 2))
-                arrow.move(to: CGPoint(x: northCenter.x, y: northCenter.y - 7))
-                arrow.addLine(to: CGPoint(x: northCenter.x + 4, y: northCenter.y - 2))
-                arrow.lineWidth = 1.2
-                arrow.stroke()
-                ("N" as NSString).draw(at: CGPoint(x: northCenter.x - 4, y: northCenter.y - 29),
-                                       withAttributes: [.font: UIFont.boldSystemFont(ofSize: 10),
-                                                        .foregroundColor: UIColor.black])
+                    let northCenter = CGPoint(x: planContent.maxX - 36, y: planContent.minY + 42)
+                    UIColor.black.setStroke()
+                    let circle = UIBezierPath(ovalIn: CGRect(x: northCenter.x - 13, y: northCenter.y - 13,
+                                                             width: 26, height: 26))
+                    circle.lineWidth = 1
+                    circle.stroke()
+                    let arrow = UIBezierPath()
+                    arrow.move(to: CGPoint(x: northCenter.x, y: northCenter.y + 8))
+                    arrow.addLine(to: CGPoint(x: northCenter.x, y: northCenter.y - 7))
+                    arrow.addLine(to: CGPoint(x: northCenter.x - 4, y: northCenter.y - 2))
+                    arrow.move(to: CGPoint(x: northCenter.x, y: northCenter.y - 7))
+                    arrow.addLine(to: CGPoint(x: northCenter.x + 4, y: northCenter.y - 2))
+                    arrow.lineWidth = 1.2
+                    arrow.stroke()
+                    ("N" as NSString).draw(at: CGPoint(x: northCenter.x - 4, y: northCenter.y - 29),
+                                           withAttributes: [.font: UIFont.boldSystemFont(ofSize: 10),
+                                                            .foregroundColor: UIColor.black])
 
-                let boundsMax = max(Double(plan.bounds.width), Double(plan.bounds.height), 0.5)
-                let usablePoints = Double(min(fitted.width, fitted.height)) * (1 - 92 / Double(canvasSide))
-                let scaleDenominator = max(Int((boundsMax * 2834.65 / max(usablePoints, 1)).rounded()), 1)
-                ("Scale ≈ 1:\(scaleDenominator)   ·   dimensions in \(useImperial ? "feet & inches" : "metres")" as NSString)
-                    .draw(at: CGPoint(x: planContent.minX + 14, y: planContent.maxY - 20),
-                          withAttributes: [.font: UIFont.systemFont(ofSize: 9),
-                                           .foregroundColor: UIColor.darkGray])
+                    let boundsMax = max(Double(sheetPlan.bounds.width), Double(sheetPlan.bounds.height), 0.5)
+                    let usablePoints = Double(min(fitted.width, fitted.height)) * (1 - 92 / Double(canvasSide))
+                    let scaleDenominator = max(Int((boundsMax * 2834.65 / max(usablePoints, 1)).rounded()), 1)
+                    ("Scale ≈ 1:\(scaleDenominator)   ·   dimensions in \(useImperial ? "feet & inches" : "metres")" as NSString)
+                        .draw(at: CGPoint(x: planContent.minX + 14, y: planContent.maxY - 20),
+                              withAttributes: [.font: UIFont.systemFont(ofSize: 9),
+                                               .foregroundColor: UIColor.darkGray])
+                }
+
+                if let mergedPlanImage {
+                    drawPlanSheet(title: "FLOOR PLAN", image: mergedPlanImage, sheetPlan: plan)
+                } else {
+                    for sheet in floorSheets {
+                        drawPlanSheet(title: "FLOOR PLAN — \(sheet.name.uppercased())",
+                                      image: sheet.image, sheetPlan: sheet.plan)
+                    }
+                }
 
                 // Sheet 2 — suite compliance.
                 var content = beginSheet("SUITE COMPLIANCE")
@@ -648,15 +699,24 @@ enum PDFExporter {
                     permitRow("Head clearance at stairs",
                               Measure.length(permit.stairHeadClearanceMeters, imperial: useImperial))
                 }
-                for entry in rooms {
+                // Grouped storey by storey when the project spans floors, with
+                // the floor carried in each label — two floors can both have
+                // a "Bedroom".
+                let measurementRooms = floorNames.count > 1
+                    ? floorNames.flatMap { name in rooms.filter { $0.floorDisplayName == name } }
+                    : rooms
+                func measurementName(_ entry: RoomEntry) -> String {
+                    floorNames.count > 1 ? "\(entry.name) (\(entry.floorDisplayName))" : entry.name
+                }
+                for entry in measurementRooms {
                     if entry.room.ceilingHeightMeters > 0 {
-                        permitRow("Ceiling height — \(entry.name)",
+                        permitRow("Ceiling height — \(measurementName(entry))",
                                   Measure.length(entry.room.ceilingHeightMeters, imperial: useImperial))
                     } else {
-                        permitRow("Ceiling height — \(entry.name)", "not recorded")
+                        permitRow("Ceiling height — \(measurementName(entry))", "not recorded")
                     }
                 }
-                for entry in rooms {
+                for entry in measurementRooms {
                     for window in entry.room.openings where window.kind == .window {
                         let windowHeightText: String
                         if let height = window.heightMeters {
@@ -664,7 +724,7 @@ enum PDFExporter {
                         } else {
                             windowHeightText = "\(Measure.length(1.07, imperial: useImperial)) (assumed)"
                         }
-                        permitRow("Window — \(entry.name)",
+                        permitRow("Window — \(measurementName(entry))",
                                   "\(Measure.length(window.widthMeters, imperial: useImperial)) × \(windowHeightText)")
                         if let clearW = window.clearWidthMeters, let clearH = window.clearHeightMeters {
                             permitRow("    Unobstructed opening",
@@ -680,7 +740,7 @@ enum PDFExporter {
                         } else {
                             doorHeightText = "\(Measure.length(2.03, imperial: useImperial)) (assumed)"
                         }
-                        permitRow("Door — \(entry.name)",
+                        permitRow("Door — \(measurementName(entry))",
                                   "\(Measure.length(door.widthMeters, imperial: useImperial)) × \(doorHeightText)")
                     }
                 }
@@ -740,6 +800,46 @@ enum PDFExporter {
             return nil
         }
         return outputURL
+    }
+
+    /// Distinct storey names in room order. More than one means the plan is
+    /// rendered per floor — storeys overlap in plan space, so a single merged
+    /// image would draw them on top of each other.
+    private static func orderedFloorNames(of entries: [RoomEntry]) -> [String] {
+        var names: [String] = []
+        for entry in entries where !names.contains(entry.floorDisplayName) {
+            names.append(entry.floorDisplayName)
+        }
+        return names
+    }
+
+    private static func roomLabels(for entries: [RoomEntry],
+                                   useImperial: Bool) -> [(name: String, area: String, center: CGPoint)] {
+        entries.compactMap { entry in
+            guard entry.room.corners.count >= 3 else { return nil }
+            let count = Double(entry.room.corners.count)
+            return (entry.name,
+                    Measure.area(entry.room.floorAreaSquareMeters, imperial: useImperial),
+                    CGPoint(x: entry.room.corners.map(\.x).reduce(0, +) / count,
+                            y: entry.room.corners.map(\.z).reduce(0, +) / count))
+        }
+    }
+
+    private static func renderPlanImage(plan: FloorPlanModel,
+                                        labels: [(name: String, area: String, center: CGPoint)],
+                                        markers: [PlanMarkers.Marker],
+                                        layers: PlanLayers,
+                                        useImperial: Bool,
+                                        side: CGFloat,
+                                        scale: CGFloat) -> UIImage? {
+        let renderer = ImageRenderer(content:
+            FloorPlanCanvas(plan: plan, useImperial: useImperial, markers: markers,
+                            roomLabels: labels, layers: layers, exportBackground: true)
+                .frame(width: side, height: side)
+                .background(Color.white)
+                .environment(\.colorScheme, .light))
+        renderer.scale = scale
+        return renderer.uiImage
     }
 
     private static func drawText(_ text: String,

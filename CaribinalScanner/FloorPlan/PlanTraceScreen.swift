@@ -39,7 +39,7 @@ struct PlanTraceScreen: View {
     @State private var isImportingFile = false
     @State private var importError: String?
     @State private var showingFinishSheet = false
-    @State private var ceilingMeters: Double = 2.4
+    @State private var ceilingMeters: Double = AppSettings.defaultCeilingMeters
     @State private var squareUpWalls = true
     @State private var saveError: String?
     @State private var pendingSelfIntersectWarning = false

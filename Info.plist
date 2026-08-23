@@ -2,57 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Base Info.plist. GENERATE_INFOPLIST_FILE merges the INFOPLIST_KEY_*
-	     scalar keys (camera usage, orientations, scene/launch generation,
-	     open-in-place, indirect input) on top of this file. The nested
-	     document-type declarations that INFOPLIST_KEY_* cannot express live
-	     here: the exported .cbproj type + the document type that lets the app
-	     open a project backup from Files / Mail / AirDrop.
-	     UIFileSharingEnabled is pinned here because the generated merge drops
-	     it specifically (verified), and the app relies on it to expose exported
-	     backups/reports in the Files app. -->
-	<key>UIFileSharingEnabled</key>
-	<true/>
-	<!-- CloudKit sync: silent pushes wake the app so SwiftData merges remote
-	     changes; NSUbiquitousContainers keeps the project-files folder visible
-	     in the Files app under iCloud Drive after storage moves there. -->
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>remote-notification</string>
-	</array>
-	<key>NSUbiquitousContainers</key>
-	<dict>
-		<key>iCloud.com.caribinalcreations.scanner</key>
-		<dict>
-			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
-			<true/>
-			<key>NSUbiquitousContainerSupportedFolderLevels</key>
-			<string>Any</string>
-			<key>NSUbiquitousContainerName</key>
-			<string>Caribinal Scanner</string>
-		</dict>
-	</dict>
-	<key>UTExportedTypeDeclarations</key>
-	<array>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>com.caribinalcreations.scanner.cbproj</string>
-			<key>UTTypeDescription</key>
-			<string>Caribinal Project Backup</string>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-				<string>public.content</string>
-			</array>
-			<key>UTTypeTagSpecification</key>
-			<dict>
-				<key>public.filename-extension</key>
-				<array>
-					<string>cbproj</string>
-				</array>
-			</dict>
-		</dict>
-	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -64,6 +13,47 @@
 			<array>
 				<string>com.caribinalcreations.scanner.cbproj</string>
 			</array>
+		</dict>
+	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSUbiquitousContainers</key>
+	<dict>
+		<key>iCloud.com.caribinalcreations.scanner</key>
+		<dict>
+			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
+			<true/>
+			<key>NSUbiquitousContainerName</key>
+			<string>Caribinal Scanner</string>
+			<key>NSUbiquitousContainerSupportedFolderLevels</key>
+			<string>Any</string>
+		</dict>
+	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Caribinal Project Backup</string>
+			<key>UTTypeIdentifier</key>
+			<string>com.caribinalcreations.scanner.cbproj</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>cbproj</string>
+				</array>
+			</dict>
 		</dict>
 	</array>
 </dict>
