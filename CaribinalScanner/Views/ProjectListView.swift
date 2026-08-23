@@ -2,6 +2,12 @@ import SwiftUI
 import SwiftData
 
 struct ProjectListView: View {
+    /// See CaribinalScannerApp: "cloud" | "local" | "memory".
+    var storeMode: String = "local"
+    /// Buffered .cbproj URL from the App-level onOpenURL (cold-launch
+    /// opens arrive before this view exists).
+    @Binding var pendingImportURL: URL?
+
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \RenovationProject.createdAt, order: .reverse) private var projects: [RenovationProject]
     @State private var showingNewProject = false
@@ -12,6 +18,7 @@ struct ProjectListView: View {
     @State private var pendingDeletion: RenovationProject?
     @State private var selectedProject: RenovationProject?
     @State private var searchText = ""
+    @ObservedObject private var syncHealth = SyncHealth.shared
 
     private var filteredProjects: [RenovationProject] {
         guard !searchText.isEmpty else { return Array(projects) }
@@ -38,6 +45,8 @@ struct ProjectListView: View {
                     List(selection: $selectedProject) {
                         ForEach(filteredProjects) { project in
                             ProjectRow(project: project)
+                                .contentShape(Rectangle())
+                                .onTapGesture { open(project) }
                                 .tag(project)
                         }
                         .onDelete(perform: delete)
@@ -45,6 +54,27 @@ struct ProjectListView: View {
                 }
             }
             .navigationTitle("Caribinal Scanner")
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if storeMode == "memory" {
+                    Label("Storage problem: running on temporary memory — changes will NOT be saved. Restart the app; if this persists, free up space or reinstall.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote.weight(.medium))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(.red.opacity(0.15))
+                        .foregroundStyle(.red)
+                } else if syncHealth.storageFull {
+                    Label("iCloud storage is full — changes are not syncing.",
+                          systemImage: "exclamationmark.icloud.fill")
+                        .font(.footnote.weight(.medium))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(.orange.opacity(0.15))
+                        .foregroundStyle(.orange)
+                }
+            }
             .searchable(text: $searchText, prompt: "Client, address, or project")
             .toolbar {
                 Menu {
@@ -86,7 +116,20 @@ struct ProjectListView: View {
             } message: {
                 Text(importMessage ?? "")
             }
-            .onOpenURL { handleIncomingBackup($0) }
+            // Consume the App-buffered open (cold launch) and any arriving
+            // while the list is up. onChange alone would miss a URL set
+            // before this view appeared, so check once at task time too.
+            .task {
+                if let url = pendingImportURL {
+                    pendingImportURL = nil
+                    handleIncomingBackup(url)
+                }
+            }
+            .onChange(of: pendingImportURL) { _, url in
+                guard let url else { return }
+                pendingImportURL = nil
+                handleIncomingBackup(url)
+            }
             .sheet(isPresented: $showingBusinessProfile) {
                 BusinessProfileScreen()
             }
@@ -102,8 +145,9 @@ struct ProjectListView: View {
                                 presenting: pendingDeletion) { project in
                 Button("Delete \"\(project.name)\"", role: .destructive) {
                     if selectedProject == project { selectedProject = nil }
-                    ScanStore.deleteAllFiles(for: project)
-                    modelContext.delete(project)
+                    // Tombstoned delete: other devices sweep the folder
+                    // even if offline edits try to resurrect it.
+                    CloudMaintenance.delete(project, context: modelContext)
                 }
                 Button("Cancel", role: .cancel) {}
             } message: { project in
@@ -126,6 +170,19 @@ struct ProjectListView: View {
                     description: Text("Choose a project from the list to view its details, scans, and estimate.")
                 )
             }
+        }
+    }
+
+    /// On compact width the split view only pushes the detail when the
+    /// selection VALUE changes. A cancelled push or state restoration can
+    /// leave the selection set while the list is showing, making taps on
+    /// that row dead. Re-assert by clearing and re-setting a beat later.
+    private func open(_ project: RenovationProject) {
+        if selectedProject == project {
+            selectedProject = nil
+            DispatchQueue.main.async { selectedProject = project }
+        } else {
+            selectedProject = project
         }
     }
 

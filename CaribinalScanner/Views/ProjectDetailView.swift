@@ -50,7 +50,7 @@ struct ProjectDetailView: View {
     // (QA-025).
     @State private var cachedScanURL: URL?
     @State private var hasLiDARData = false
-    @State private var loadedDeal: DealInputs?
+    @State private var downloadingFromCloud = false
     // The USDZ actually shared for the 3D model, resolved when the preview
     // is opened (QA-032).
     @State private var modelShareURL: URL?
@@ -71,18 +71,15 @@ struct ProjectDetailView: View {
 
     /// The single most useful thing to do next, driven by cached state.
     /// How this project type steers the dashboard (card order, suite
-    /// compliance visibility, deal defaults, AI framing).
+    /// compliance visibility, AI framing).
     private var typeProfile: ProjectTypeProfile {
         ProjectTypeProfile.profile(for: project.projectType)
     }
 
-    private enum NextStep { case addRoom, priceQuote, analyzeDeal, shareReport }
+    private enum NextStep { case addRoom, priceQuote, shareReport }
     private var nextStep: NextStep {
         if plan == nil && rooms.isEmpty { return .addRoom }
         if !rooms.isEmpty && !hasPricedQuote { return .priceQuote }
-        // Investment-led types (flips, multi-family) get pointed at the deal
-        // before the client report — the numbers decide whether to proceed.
-        if typeProfile.emphasis == .investment && loadedDeal == nil { return .analyzeDeal }
         return .shareReport
     }
 
@@ -145,18 +142,6 @@ struct ProjectDetailView: View {
                                 message: "Set prices on the material takeoff to build the client quote.",
                                 systemImage: "list.clipboard",
                                 actionTitle: "Open Quote")
-            }
-            .buttonStyle(.plain)
-        case .analyzeDeal:
-            NavigationLink {
-                DealAnalyzerScreen(project: project,
-                                   estimateMidpoint: estimateResult.map { ($0.totalLow + $0.totalHigh) / 2 },
-                                   onSave: reloadScan)
-            } label: {
-                PromptCardLabel(title: "Run the deal numbers",
-                                message: "Purchase, reno, and \(typeProfile.defaultDealStrategy == .flip ? "resale" : "rent") — see if this one is a winner.",
-                                systemImage: "chart.line.uptrend.xyaxis",
-                                actionTitle: "Open Deal Analyzer")
             }
             .buttonStyle(.plain)
         case .shareReport:
@@ -321,29 +306,14 @@ struct ProjectDetailView: View {
         }
     }
 
-    /// INVESTMENT: Deal Analyzer only (it now includes ROI / payback).
+    /// INVESTMENT: the simple contractor-facing Suite ROI & Payback.
     private var investmentCard: some View {
         DashboardCard(title: "Investment", systemImage: "chart.line.uptrend.xyaxis") {
             VStack(alignment: .leading, spacing: 10) {
-                if let deal = loadedDeal {
-                    let dealResult = DealAnalyzer.calculate(
-                        inputs: deal,
-                        estimateMidpoint: estimateResult.map { ($0.totalLow + $0.totalHigh) / 2 })
-                    HStack {
-                        Text(deal.strategy.rawValue)
-                        Spacer()
-                        Text(deal.strategy == .flip
-                             ? String(format: "%.1f%% ROI", dealResult.flipROIPercent)
-                             : String(format: "%.1f%% CoC", dealResult.cashOnCashPercent))
-                            .bold()
-                            .foregroundStyle(dealResult.isWinner ? Color.green : .secondary)
-                    }
-                }
-                navRow(title: "Deal Analyzer (Flip / Rental / BRRRR)",
+                navRow(title: "Suite ROI & Payback",
                        systemImage: "chart.line.uptrend.xyaxis") {
-                    DealAnalyzerScreen(project: project,
-                                       estimateMidpoint: estimateResult.map { ($0.totalLow + $0.totalHigh) / 2 },
-                                       onSave: reloadScan)
+                    ROIScreen(project: project,
+                              estimateMidpoint: estimateResult.map { ($0.totalLow + $0.totalHigh) / 2 })
                 }
             }
         }
@@ -442,6 +412,15 @@ struct ProjectDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
+                if downloadingFromCloud {
+                    Label("Downloading project files from iCloud… Content fills in as it arrives.",
+                          systemImage: "icloud.and.arrow.down")
+                        .font(.footnote.weight(.medium))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+                        .foregroundStyle(.blue)
+                }
                 headerCard
                 nextStepCard
                 planCard
@@ -653,6 +632,20 @@ struct ProjectDetailView: View {
             Text("Photos, notes, estimate, and planning are kept. This can't be undone.")
         }
         .onAppear(perform: reloadScan)
+        // While files are downloading from iCloud, re-check once a second
+        // and reload when they land — otherwise the banner (and the empty
+        // content behind it) would sit frozen until the user re-entered
+        // the project.
+        .task(id: downloadingFromCloud) {
+            guard downloadingFromCloud else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                if !ScanStore.hasUndownloadedFiles(for: project) {
+                    reloadScan()
+                    break
+                }
+            }
+        }
     }
 
     /// Turns the hand-entered measurements into a captured-style room so
@@ -713,7 +706,10 @@ struct ProjectDetailView: View {
                 // Supersede any pending background write so a late write can't
                 // resurrect the just-deleted model (QA-036).
                 Model3DBuilder.cancelUSDZWrite(to: usdzURL)
-                try? FileManager.default.removeItem(at: usdzURL)
+                // Coordinated delete also removes an undownloaded
+                // placeholder — a raw removeItem would no-op on it and the
+                // deleted model would re-sync everywhere.
+                ScanStore.coordinatedDelete(at: usdzURL)
             }
         }
         if !hasLiDAR, remainingRooms.isEmpty {
@@ -802,6 +798,10 @@ struct ProjectDetailView: View {
     }
 
     private func reloadScan() {
+        // Surface files that exist in iCloud but haven't landed here yet
+        // (also kicks their download) — otherwise a syncing project renders
+        // as empty and invites edits that clobber the real data.
+        downloadingFromCloud = ScanStore.hasUndownloadedFiles(for: project)
         let manual = ScanStore.loadManualRoom(for: project)
         hasManualRoom = manual != nil
         rooms = ScanStore.loadRooms(for: project)
@@ -822,7 +822,6 @@ struct ProjectDetailView: View {
             planSource = nil
         }
         // Cache disk-backed lookups so body reads stay off the disk (QA-025).
-        loadedDeal = ScanStore.loadDeal(for: project)
         hasLiDARData = ScanStore.roomDataURL(for: project) != nil
         cachedScanURL = ScanStore.lidarUSDZURL(for: project) ?? ScanStore.usdzURL(for: project)
         // Cache the quote grand total and "is anything priced" flag here too,

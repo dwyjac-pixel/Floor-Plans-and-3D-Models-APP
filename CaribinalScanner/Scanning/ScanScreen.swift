@@ -125,18 +125,25 @@ struct ScanScreen: View {
                 // work never reads the SwiftData @Model. room.json is written
                 // first so a fragile USDZ export can't lose the scan.
                 let data = try JSONEncoder().encode(room)
-                try data.write(to: dir.appendingPathComponent(ScanStore.roomDataFileName),
-                               options: .atomic)
+                try ScanStore.coordinatedWrite(data,
+                                               to: dir.appendingPathComponent(ScanStore.roomDataFileName))
+                // Export to a Caches temp and swap under coordination —
+                // dir may be inside the iCloud container, where a direct
+                // multi-second export would race the sync daemon.
                 let usdz = dir.appendingPathComponent(ScanStore.lidarUSDZFileName)
+                let temp = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                    .appendingPathComponent("\(UUID().uuidString).tmp.usdz")
                 do {
-                    try room.export(to: usdz, exportOptions: .parametric)
-                } catch {
                     do {
-                        try room.export(to: usdz, exportOptions: .mesh)
+                        try room.export(to: temp, exportOptions: .parametric)
                     } catch {
-                        // Both exports failed — drop any stale USDZ (QA-048).
-                        try? FileManager.default.removeItem(at: usdz)
+                        try room.export(to: temp, exportOptions: .mesh)
                     }
+                    try ScanStore.coordinatedReplace(at: usdz, withItemAt: temp)
+                } catch {
+                    // Export failed — drop the temp and any stale USDZ (QA-048).
+                    try? FileManager.default.removeItem(at: temp)
+                    ScanStore.coordinatedDelete(at: usdz)
                 }
                 await MainActor.run {
                     controller.cancel()

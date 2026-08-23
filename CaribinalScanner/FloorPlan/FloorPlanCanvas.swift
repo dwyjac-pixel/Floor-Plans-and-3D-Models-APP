@@ -216,6 +216,19 @@ struct FloorPlanCanvas: View {
                     inner.addLine(to: localPoint(-w / 2 + 0.07, d / 2 - 0.07))
                     inner.closeSubpath()
                     context.stroke(inner, with: .color(.gray.opacity(0.7)), lineWidth: z)
+                case .bulkhead:
+                    // Overhead object convention: dashed outline + label.
+                    var dashed = Path()
+                    dashed.move(to: localPoint(-w / 2 + 0.02, -d / 2 + 0.02))
+                    dashed.addLine(to: localPoint(w / 2 - 0.02, -d / 2 + 0.02))
+                    dashed.addLine(to: localPoint(w / 2 - 0.02, d / 2 - 0.02))
+                    dashed.addLine(to: localPoint(-w / 2 + 0.02, d / 2 - 0.02))
+                    dashed.closeSubpath()
+                    context.stroke(dashed, with: .color(.gray.opacity(0.8)),
+                                   style: StrokeStyle(lineWidth: 1.2, dash: [6, 4]))
+                    context.draw(Text("BULKHEAD")
+                        .font(.system(size: 7, weight: .semibold))
+                        .foregroundStyle(.secondary), at: localPoint(0, 0))
                 case .shower:
                     var stall = Path()
                     stall.move(to: localPoint(-w / 2 + 0.06, -d / 2 + 0.06))
@@ -311,7 +324,7 @@ struct FloorPlanCanvas: View {
                 guard onScreen(s, e) else { continue }
                 strokeSegment(opening, color: background, lineWidth: gapWidth)
                 // Jamb ticks so a cased opening reads as intentional.
-                let n = interiorNormal(s, e)
+                let n = opening.interiorNormal ?? interiorNormal(s, e)
                 for end in [s, e] {
                     var tick = Path()
                     tick.move(to: CGPoint(x: end.x + n.x * (gapWidth / 2 + 2 * z),
@@ -334,7 +347,7 @@ struct FloorPlanCanvas: View {
                     strokeSegment(door, color: style.doorColor, lineWidth: accentWidth)
                     continue
                 }
-                var n = interiorNormal(s, e)
+                var n = door.interiorNormal ?? interiorNormal(s, e)
                 if door.swingsOutward {
                     n = CGPoint(x: -n.x, y: -n.y)
                 }

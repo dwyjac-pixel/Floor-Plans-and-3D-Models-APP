@@ -10,6 +10,9 @@ struct MaterialTakeoffScreen: View {
     @State private var adjustments = TakeoffAdjustments()
     @State private var quote = QuoteSettings()
     @FocusState private var focusedPriceKey: String?
+    @State private var csvURL: URL?
+    @State private var csvPreview = ""
+    @State private var showingCSVPreview = false
 
     private var totals: QuoteTotals {
         QuoteTotals(subtotal: adjustments.total(for: takeoff), settings: quote)
@@ -95,11 +98,20 @@ struct MaterialTakeoffScreen: View {
         .navigationTitle("Quote")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    prepareCSV()
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+                .accessibilityLabel("Export order list (CSV)")
+            }
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
                 Button("Done") { focusedPriceKey = nil }
             }
         }
+        .sheet(isPresented: $showingCSVPreview) { csvPreviewSheet }
         .onAppear {
             adjustments = ScanStore.loadTakeoffAdjustments(for: project) ?? TakeoffAdjustments()
             quote = ScanStore.loadQuoteSettings(for: project)
@@ -184,5 +196,64 @@ struct MaterialTakeoffScreen: View {
 
     private func persist() {
         try? ScanStore.saveTakeoffAdjustments(adjustments, for: project)
+    }
+
+    // MARK: - CSV order list (preview before sending)
+
+    private var csvPreviewSheet: some View {
+        NavigationStack {
+            ScrollView([.vertical, .horizontal]) {
+                Text(csvPreview)
+                    .font(.system(.caption2, design: .monospaced))
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .navigationTitle("Order List Preview")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { showingCSVPreview = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    if let csvURL {
+                        ShareLink(item: csvURL) {
+                            Label("Send", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func prepareCSV() {
+        func quoted(_ text: String) -> String {
+            "\"" + text.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+        }
+        var rows = ["Category,Item,Quantity,Note,Included,Price (CAD)"]
+        for line in takeoff.lines {
+            let included = adjustments.isIncluded(line)
+            let price = adjustments.price(for: line).map { String(Int($0.rounded())) } ?? ""
+            rows.append([quoted(line.category), quoted(line.item), quoted(line.quantity),
+                         quoted(line.note), included ? "yes" : "no", price]
+                .joined(separator: ","))
+        }
+        rows.append("")
+        rows.append(",,,,Subtotal,\(Int(totals.subtotal.rounded()))")
+        rows.append(",,,,Markup,\(Int(totals.markup.rounded()))")
+        rows.append(",,,,\(quote.taxLabel),\(Int(totals.tax.rounded()))")
+        rows.append(",,,,Total,\(Int(totals.grandTotal.rounded()))")
+        let text = rows.joined(separator: "\r\n")
+
+        let safeName = project.name
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(safeName) - Materials.csv")
+        guard let data = text.data(using: .utf8), (try? data.write(to: url, options: .atomic)) != nil else {
+            return
+        }
+        csvPreview = text
+        csvURL = url
+        showingCSVPreview = true
     }
 }

@@ -21,6 +21,8 @@ struct Interactive3DView: UIViewRepresentable {
     /// changes, so orbiting freely afterwards is untouched.
     var cameraPose: (position: SCNVector3, target: SCNVector3)?
     var cameraPoseToken = 0
+    /// Walkthrough: fly-style camera — drag looks, two-finger drag moves.
+    var walkMode = false
 
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView()
@@ -75,6 +77,7 @@ struct Interactive3DView: UIViewRepresentable {
 
     func updateUIView(_ uiView: SCNView, context: Context) {
         context.coordinator.parent = self
+        uiView.defaultCameraController.interactionMode = walkMode ? .fly : .orbitTurntable
         // Never swap the scene mid-drag — the coordinator holds node
         // references into the current one.
         if uiView.scene !== scene, !context.coordinator.isDragging {

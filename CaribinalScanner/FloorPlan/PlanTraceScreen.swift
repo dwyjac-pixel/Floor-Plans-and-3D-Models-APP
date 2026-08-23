@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import PDFKit
+import UniformTypeIdentifiers
 
 /// Digitize a paper plan: import a photo or PDF, calibrate the scale by
 /// tapping both ends of one known dimension, then tap the room corners in
@@ -32,6 +33,11 @@ struct PlanTraceScreen: View {
     @State private var detectedDimensions: [DimensionOCR.DetectedDimension] = []
     @State private var aiSuggestion: DimensionOCR.DetectedDimension?
     @State private var planAnalysis = PlanVision.Analysis()
+    @State private var dxfUnitsName: String?
+    @State private var skipAutoAnalysis = false
+    @State private var photoLoadTask: Task<Void, Never>?
+    @State private var isImportingFile = false
+    @State private var importError: String?
     @State private var showingFinishSheet = false
     @State private var ceilingMeters: Double = 2.4
     @State private var squareUpWalls = true
@@ -103,9 +109,13 @@ struct PlanTraceScreen: View {
         }
         .onChange(of: pickerItem) { _, item in
             guard let item else { return }
-            Task {
-                if let data = try? await item.loadTransferable(type: Data.self),
-                   let loaded = UIImage(data: data) {
+            // Cancellable: a slow iCloud photo must never clobber a file
+            // the user imported while waiting.
+            photoLoadTask?.cancel()
+            photoLoadTask = Task {
+                let data = try? await item.loadTransferable(type: Data.self)
+                guard !Task.isCancelled else { return }
+                if let data, let loaded = UIImage(data: data) {
                     image = loaded
                     step = .scaleA
                 }
@@ -113,6 +123,23 @@ struct PlanTraceScreen: View {
             }
         }
         .onChange(of: image) { _, newImage in
+            // A replaced image invalidates everything traced on the old
+            // one — corners, calibration points, view transform.
+            corners = []
+            scalePointA = nil
+            scalePointB = nil
+            zoom = 1
+            zoomBase = 1
+            offset = .zero
+            offsetBase = .zero
+            // DXF imports arrive with exact geometry already attached —
+            // don't overwrite it with pixel-level OCR/contour guesses.
+            if skipAutoAnalysis {
+                skipAutoAnalysis = false
+                return
+            }
+            metersPerPixel = 0
+            dxfUnitsName = nil
             detectedDimensions = []
             aiSuggestion = nil
             planAnalysis = PlanVision.Analysis()
@@ -125,7 +152,8 @@ struct PlanTraceScreen: View {
             }
         }
         .fileImporter(isPresented: $showingFileImporter,
-                      allowedContentTypes: [.pdf, .image]) { result in
+                      allowedContentTypes: [.pdf, .image,
+                                            UTType(filenameExtension: "dxf") ?? .data]) { result in
             if case .success(let url) = result {
                 loadFile(url)
             }
@@ -140,6 +168,21 @@ struct PlanTraceScreen: View {
         } message: {
             Text(saveError ?? "")
         }
+        .alert("Import Failed", isPresented: Binding(
+            get: { importError != nil },
+            set: { if !$0 { importError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(importError ?? "")
+        }
+        .overlay {
+            if isImportingFile {
+                ProgressView("Reading CAD file…")
+                    .padding(18)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
     }
 
     private var hint: String {
@@ -153,6 +196,9 @@ struct PlanTraceScreen: View {
         case .scaleB:
             return "Now tap the OTHER end of that known dimension."
         case .trace:
+            if let dxfUnitsName {
+                return "DXF imported at exact scale (\(dxfUnitsName)). Use the AI outline below, or tap corners (\(corners.count) placed) — taps snap to the drawing's own points."
+            }
             return "Tap each room corner in order around the room (\(corners.count) placed). The last wall closes automatically."
         }
     }
@@ -411,24 +457,111 @@ struct PlanTraceScreen: View {
     private func loadFile(_ url: URL) {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        if url.pathExtension.lowercased() == "dxf" {
+            loadDXF(url)
+            return
+        }
         if url.pathExtension.lowercased() == "pdf" {
-            guard let document = PDFDocument(url: url), let page = document.page(at: 0) else { return }
-            let rect = page.bounds(for: .mediaBox)
-            let renderScale = 2400 / max(rect.width, rect.height)
-            let size = CGSize(width: rect.width * renderScale, height: rect.height * renderScale)
-            let renderer = UIGraphicsImageRenderer(size: size)
-            image = renderer.image { context in
-                UIColor.white.setFill()
-                context.fill(CGRect(origin: .zero, size: size))
-                context.cgContext.translateBy(x: 0, y: size.height)
-                context.cgContext.scaleBy(x: renderScale, y: -renderScale)
-                page.draw(with: .mediaBox, to: context.cgContext)
+            guard let document = PDFDocument(url: url), let page = document.page(at: 0) else {
+                importError = "Could not open that PDF."
+                return
             }
+            // thumbnail(of:) honours the page's /Rotate and box origin,
+            // and renders at 1x — no device-scale memory blow-up.
+            let rect = page.bounds(for: .mediaBox)
+            let rotated = ((page.rotation % 180) + 180) % 180 == 90
+            let pageWidth = rotated ? rect.height : rect.width
+            let pageHeight = rotated ? rect.width : rect.height
+            guard pageWidth > 4, pageHeight > 4 else {
+                importError = "Could not open that PDF."
+                return
+            }
+            let renderScale = 2400 / max(pageWidth, pageHeight)
+            image = page.thumbnail(of: CGSize(width: pageWidth * renderScale,
+                                              height: pageHeight * renderScale),
+                                   for: .mediaBox)
             step = .scaleA
         } else if let data = try? Data(contentsOf: url), let loaded = UIImage(data: data) {
             image = loaded
             step = .scaleA
+        } else {
+            importError = "Could not read that file."
         }
+    }
+
+    /// CAD import: exact geometry, exact scale — no calibration taps.
+    /// Parsing and rendering run off the main thread; big drawings from a
+    /// CAD package can carry a lot of entities.
+    private func loadDXF(_ url: URL) {
+        photoLoadTask?.cancel()
+        guard let data = try? Data(contentsOf: url) else {
+            importError = "Could not read that file."
+            return
+        }
+        isImportingFile = true
+        Task.detached(priority: .userInitiated) {
+            let content = String(data: data, encoding: .utf8)
+                ?? String(data: data, encoding: .isoLatin1)
+            let parsed = content.flatMap { DXFImporter.parse($0) }
+            let rendered = parsed.flatMap { DXFImporter.renderImage($0) }
+            await MainActor.run {
+                isImportingFile = false
+                guard let parsed, let rendered else {
+                    importError = "No drawable geometry found in that DXF (or the drawing is too small)."
+                    return
+                }
+                applyDXF(parsed: parsed, rendered: rendered)
+            }
+        }
+    }
+
+    private func applyDXF(parsed: DXFImporter.ImportResult,
+                          rendered: (image: UIImage, metersPerPixel: Double)) {
+        skipAutoAnalysis = true
+        image = rendered.image
+        metersPerPixel = rendered.metersPerPixel
+        dxfUnitsName = parsed.unitsName
+        // The CAD file's angles are exact — don't square them away.
+        squareUpWalls = false
+
+        // Exact corner candidates and outline proposals in pixel space,
+        // deduplicated on a half-pixel grid and capped so huge drawings
+        // stay responsive.
+        func toPixels(_ point: CGPoint) -> CGPoint {
+            CGPoint(x: Double(point.x) / rendered.metersPerPixel,
+                    y: Double(point.y) / rendered.metersPerPixel)
+        }
+        var analysis = PlanVision.Analysis()
+        var seenKeys = Set<Int64>()
+        candidateLoop: for segment in parsed.segments {
+            for endpoint in [segment.start, segment.end] {
+                let pixel = toPixels(endpoint)
+                let key = Int64((pixel.x * 2).rounded()) &* 1_000_003
+                    &+ Int64((pixel.y * 2).rounded())
+                if seenKeys.insert(key).inserted {
+                    analysis.cornerCandidates.append(pixel)
+                    if analysis.cornerCandidates.count >= 20_000 { break candidateLoop }
+                }
+            }
+        }
+        var best: (points: [CGPoint], area: CGFloat)?
+        for polyline in parsed.closedPolylines where polyline.count >= 4 && polyline.count <= 40 {
+            var doubled: CGFloat = 0
+            for index in 0..<polyline.count {
+                let a = polyline[index]
+                let b = polyline[(index + 1) % polyline.count]
+                doubled += a.x * b.y - b.x * a.y
+            }
+            let area = abs(doubled) / 2
+            if area > (best?.area ?? 0) {
+                best = (polyline.map(toPixels), area)
+            }
+        }
+        analysis.outlineProposal = best?.points ?? []
+        detectedDimensions = []
+        aiSuggestion = nil
+        planAnalysis = analysis
+        step = .trace
     }
 
     private func save(force: Bool = false) {
