@@ -32,7 +32,7 @@ struct ROIResult {
     let tenYearPosition: Double         // net income ×10 − build cost
 
     var paybackText: String {
-        guard let paybackYears else { return "—" }
+        guard let paybackYears else { return "n/a" }
         return String(format: "%.1f years", paybackYears)
     }
 }

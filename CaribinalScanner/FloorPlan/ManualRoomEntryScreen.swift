@@ -99,7 +99,7 @@ struct ManualRoomEntryScreen: View {
             } header: {
                 Text("Doors, Windows & Openings")
             } footer: {
-                Text("Tap an item to adjust it, swipe to delete. Positions are measured from the corner where each wall begins, going clockwise — check the preview and adjust until it matches the room.")
+                Text("Tap an item to adjust it, swipe to delete. Positions are measured from the corner where each wall begins, going clockwise. Check the preview and adjust until it matches the room.")
             }
         }
         .frame(maxWidth: 640)
@@ -168,7 +168,7 @@ struct ManualRoomEntryScreen: View {
         let wall = ManualRoom.wallNames[min(max(feature.wallIndex, 0), 3)]
         let offset = Measure.length(feature.offsetMeters, imperial: useImperial)
         let width = Measure.length(feature.widthMeters, imperial: useImperial)
-        return "\(feature.kind.rawValue) — \(wall), \(offset) from corner, \(width) wide"
+        return "\(feature.kind.rawValue): \(wall), \(offset) from corner, \(width) wide"
     }
 
     private func bumpOutLabel(_ bump: ManualRoom.BumpOut) -> String {
@@ -176,7 +176,7 @@ struct ManualRoomEntryScreen: View {
         let width = Measure.length(bump.widthMeters, imperial: useImperial)
         let depth = Measure.length(bump.depthMeters, imperial: useImperial)
         let offset = Measure.length(bump.offsetMeters, imperial: useImperial)
-        return "\(wall) — \(width) wide × \(depth) deep, \(offset) from corner"
+        return "\(wall): \(width) wide × \(depth) deep, \(offset) from corner"
     }
 
     /// The length of the main-rectangle wall a feature/bump-out sits on:

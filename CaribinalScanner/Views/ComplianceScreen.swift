@@ -44,7 +44,7 @@ struct ComplianceScreen: View {
             } header: {
                 Text("From your planning & estimate")
             } footer: {
-                Text("Guidance only, based on National Building Code secondary-suite provisions. Editions and municipal requirements vary — confirm everything with your local authority before construction.")
+                Text("Guidance only, based on National Building Code secondary-suite provisions. Editions and municipal requirements vary. Confirm everything with your local authority before construction.")
             }
         }
         .frame(maxWidth: 760)
@@ -69,7 +69,7 @@ private struct CheckRow: View {
                 Text(check.detail)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                if check.reference != "—" {
+                if check.reference != "n/a" {
                     Text(check.reference)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)

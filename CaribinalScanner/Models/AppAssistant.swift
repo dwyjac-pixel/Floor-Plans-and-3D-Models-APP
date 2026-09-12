@@ -31,7 +31,7 @@ enum AppAssistant {
 
         func summary(imperial: Bool) -> String {
             var out = "• \(name)"
-            if !client.isEmpty { out += " — client \(client)" }
+            if !client.isEmpty { out += ": client \(client)" }
             if !address.isEmpty { out += ", \(address)" }
             if !postal.isEmpty { out += " (\(postal))" }
             out += ". Type: \(type). Estimate: \(estimateStatus). Permit: \(permitStatus)."
@@ -104,7 +104,7 @@ extension AppAssistant {
         ]
         return LanguageModelSession(tools: tools, instructions: """
         You are the office assistant inside Interior AI Reno Planner, a \
-        contractor's basement-renovation app. Answer ONLY from what the tools return — look \
+        contractor's basement-renovation app. Answer ONLY from what the tools return. Look \
         projects up before stating any fact, and if the tools don't have it, say so. \
         You can also update a project's estimate/permit status and add notes when \
         asked. Be brief and practical; format money and measurements exactly as the \

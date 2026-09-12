@@ -28,12 +28,12 @@ struct AddRoomSheet: View {
                 if lidarSupported {
                     Section {
                         row(title: "Scan with LiDAR",
-                            description: "Point the camera and walk the room — walls, doors, and windows are measured automatically.",
+                            description: "Point the camera and walk the room. Walls, doors, and windows are measured automatically.",
                             systemImage: "cube.transparent",
                             recommended: true,
                             action: onLiDAR)
                     } footer: {
-                        Text("Recommended on this device — the fastest, most accurate way to capture a room.")
+                        Text("Recommended on this device: the fastest, most accurate way to capture a room.")
                     }
                 }
 
@@ -49,12 +49,12 @@ struct AddRoomSheet: View {
                         systemImage: "doc.viewfinder",
                         action: onTrace)
                     row(title: "Type measurements",
-                        description: "Enter the room's width and length by hand — no camera needed.",
+                        description: "Enter the room's width and length by hand. No camera needed.",
                         systemImage: "square.and.pencil",
                         action: onManual)
                 } footer: {
                     if !lidarSupported {
-                        Text("LiDAR scanning isn't available on this device — use the camera, trace a plan, or enter measurements.")
+                        Text("LiDAR scanning isn't available on this device. Use the camera, trace a plan, or enter measurements.")
                     }
                 }
             }

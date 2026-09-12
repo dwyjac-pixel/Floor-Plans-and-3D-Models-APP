@@ -34,7 +34,7 @@ struct AssistantScreen: View {
                     ContentUnavailableView(
                         "Needs Apple Intelligence",
                         systemImage: "sparkles.slash",
-                        description: Text("The assistant runs on-device on iPhone 15 Pro or later with iOS 26 — no API key, nothing leaves the phone."))
+                        description: Text("The assistant runs on-device on iPhone 15 Pro or later with iOS 26. No API key, nothing leaves the phone."))
                 case .needsAppleIntelligence:
                     ContentUnavailableView(
                         "Turn on Apple Intelligence",
@@ -60,7 +60,7 @@ struct AssistantScreen: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         if messages.isEmpty {
-                            Text("Ask about any client or project — statuses, quotes, areas, notes — or tell me to update a status or add a note. Everything stays on this phone.")
+                            Text("Ask about any client or project (statuses, quotes, areas, notes), or tell me to update a status or add a note. Everything stays on this phone.")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                                 .padding(.top, 12)
@@ -196,7 +196,7 @@ struct AssistantScreen: View {
             project.estimateStatus = status
         }
         try? modelContext.save()
-        return "Done — \(project.name)'s \(kind.lowercased()) status is now \(status)."
+        return "Done. \(project.name)'s \(kind.lowercased()) status is now \(status)."
     }
 
     @MainActor

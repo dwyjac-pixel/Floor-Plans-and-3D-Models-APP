@@ -95,7 +95,7 @@ final class ScanSessionController: NSObject, ObservableObject, RoomCaptureViewDe
             ScanDebugLog.log("watchdog: processing timed out")
             self.isProcessing = false
             self.didFail = true
-            self.errorMessage = "Processing is taking too long. The scan may have been interrupted — tap Rescan to try again."
+            self.errorMessage = "Processing is taking too long. The scan may have been interrupted. Tap Rescan to try again."
         }
     }
 

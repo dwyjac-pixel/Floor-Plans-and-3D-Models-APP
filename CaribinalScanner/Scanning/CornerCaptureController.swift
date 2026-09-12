@@ -78,7 +78,7 @@ final class CornerCaptureController: NSObject, ObservableObject, ARSessionDelega
 
     func markCorner() {
         guard let result = raycastFloor() else {
-            hint = "Floor not found — sweep the phone over the floor for a few seconds and wait for the crosshair to turn green."
+            hint = "Floor not found. Sweep the phone over the floor for a few seconds and wait for the crosshair to turn green."
             return
         }
         let transform = result.worldTransform
@@ -86,7 +86,7 @@ final class CornerCaptureController: NSObject, ObservableObject, ARSessionDelega
         if let cameraTransform = arView.session.currentFrame?.camera.transform {
             let camera = SIMD3<Float>(cameraTransform.columns.3.x, cameraTransform.columns.3.y, cameraTransform.columns.3.z)
             if simd_distance(camera, position) > 8 {
-                hint = "That point is too far away — move closer to the corner and aim at the floor."
+                hint = "That point is too far away. Move closer to the corner and aim at the floor."
                 return
             }
         }
@@ -94,12 +94,12 @@ final class CornerCaptureController: NSObject, ObservableObject, ARSessionDelega
         // floor — those land on a table/counter and would shift the outline.
         // The first corner always seeds the floor height, so it can't be lost.
         if let floorY, abs(position.y - floorY) > floorTolerance {
-            hint = "That looks like furniture (a table or counter), not the floor — aim at the floor corner."
+            hint = "That looks like furniture (a table or counter), not the floor. Aim at the floor corner."
             return
         }
         hint = nil
         if let last = corners.last, horizontalDistance(last, position) < 0.05 {
-            hint = "That point is almost identical to the previous corner — move to the next corner."
+            hint = "That point is almost identical to the previous corner. Move to the next corner."
             return
         }
         corners.append(position)
@@ -166,13 +166,13 @@ final class CornerCaptureController: NSObject, ObservableObject, ARSessionDelega
             case .limited(.initializing):
                 self.trackingStatus = "Move the phone slowly to map the room…"
             case .limited(.excessiveMotion):
-                self.trackingStatus = "Moving too fast — slow down."
+                self.trackingStatus = "Moving too fast. Slow down."
             case .limited(.insufficientFeatures):
-                self.trackingStatus = "Not enough detail — add light or aim at a textured area."
+                self.trackingStatus = "Not enough detail. Add light or aim at a textured area."
             case .limited(.relocalizing):
-                self.trackingStatus = "Re-finding position — move the phone slowly."
+                self.trackingStatus = "Re-finding position. Move the phone slowly."
             case .limited:
-                self.trackingStatus = "Limited tracking — move the phone slowly."
+                self.trackingStatus = "Limited tracking. Move the phone slowly."
             }
         }
     }

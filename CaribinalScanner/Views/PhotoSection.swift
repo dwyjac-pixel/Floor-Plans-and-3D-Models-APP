@@ -76,7 +76,7 @@ struct PhotoSection: View {
             }
             .accessibilityLabel("Add Photos")
             .accessibilityHint("Choose up to 10 photos from your library")
-            Text("Tap a photo to add a caption — captions print under photos in the PDF report.")
+            Text("Tap a photo to add a caption. Captions print under photos in the PDF report.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

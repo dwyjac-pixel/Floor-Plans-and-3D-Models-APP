@@ -487,6 +487,7 @@ struct FloorPlanScreen: View {
         }
         .confirmationDialog("Fixture", isPresented: $showingFixtureActions, titleVisibility: .visible) {
             Button("Rotate 90°") { rotateFixture() }
+            Button("Snap to Nearest Wall") { snapFixtureToNearestWall() }
             Button("Rotate Freely (Two-Finger Twist)") {
                 freeRotateFixtureID = fixtureActionID
             }
@@ -631,19 +632,19 @@ struct FloorPlanScreen: View {
 
     private var modeHint: String? {
         if cornerRoom == nil, hasLiDARPlan {
-            return "LiDAR scan plan — use Convert Scan to Editable Plan on the project screen to unlock measurements editing and drawing tools."
+            return "LiDAR scan plan. Use Convert Scan to Editable Plan on the project screen to unlock measurements editing and drawing tools."
         }
         if cornerRoom == nil, canConvertManualPlan {
-            return "Manual plans can't be drawn on — tap Make Editable to turn this one into an editable room."
+            return "Manual plans can't be drawn on. Tap Make Editable to turn this one into an editable room."
         }
         if arrangingRooms {
-            return "Arrange mode — drag a room to reposition it on the plan; the layout saves when you let go."
+            return "Arrange mode: drag a room to reposition it on the plan; the layout saves when you let go."
         }
         if cornerRoom == nil, rooms.count > 1 {
-            return "Viewing all rooms — pick a room from the Room menu above to use the drawing tools, or tap Arrange to move rooms."
+            return "Viewing all rooms. Pick a room from the Room menu above to use the drawing tools, or tap Arrange to move rooms."
         }
         if eraserActive {
-            return "Eraser on — tap a wall, door, window, or fixture to delete it."
+            return "Eraser on. Tap a wall, door, window, or fixture to delete it."
         }
         if viewMode == .model {
             if let placing3DOpening {
@@ -655,7 +656,7 @@ struct FloorPlanScreen: View {
             return nil
         }
         if eraserActive {
-            return "Eraser on — tap a wall, door, window, fixture, or marker to delete it."
+            return "Eraser on. Tap a wall, door, window, fixture, or marker to delete it."
         }
         if let placingKind {
             return "Tap the plan to place the \(placingKind.rawValue.lowercased()) marker."
@@ -668,7 +669,7 @@ struct FloorPlanScreen: View {
         }
         if drawingWall {
             return wallDraftStart == nil
-                ? "Touch and drag to sketch the wall in one stroke — or tap its start point."
+                ? "Touch and drag to sketch the wall in one stroke, or tap its start point."
                 : "Drag to the end point (dashed preview follows), or tap it."
         }
         if editingWalls {
@@ -904,7 +905,26 @@ struct FloorPlanScreen: View {
               let index = room.fixtures.firstIndex(where: { $0.id == fixtureActionID }) else { return }
         room.fixtures[index].rotationDegrees = (room.fixtures[index].rotationDegrees + 90)
             .truncatingRemainder(dividingBy: 360)
+        if let snap = room.fixtureSnappedToWall(room.fixtures[index], maxAngleDegrees: 10) {
+            room.fixtures[index] = snap.fixture
+        }
         persist(room)
+    }
+
+    /// Squares the fixture up to the closest wall within 5 ft and pulls it
+    /// flush, whatever angle it was left at.
+    private func snapFixtureToNearestWall() {
+        guard var room = cornerRoom,
+              let index = room.fixtures.firstIndex(where: { $0.id == fixtureActionID }) else { return }
+        guard let snap = room.fixtureSnappedToWall(room.fixtures[index],
+                                                   maxDistance: 1.5, maxAngleDegrees: 360) else {
+            flashConfirmation("No wall within 5 ft")
+            return
+        }
+        room.fixtures[index] = snap.fixture
+        if persist(room) {
+            flashConfirmation(snap.tuckedIntoCorner ? "Tucked into the corner" : "Flush with the wall")
+        }
     }
 
     private func deleteFixtureFromDialog() {
@@ -932,6 +952,9 @@ struct FloorPlanScreen: View {
         let minZ = room.corners.map(\.z).min() ?? 0
         room.fixtures[index].x = sceneX + minX
         room.fixtures[index].z = sceneZ + minZ
+        if let snap = room.fixtureSnappedToWall(room.fixtures[index]) {
+            room.fixtures[index] = snap.fixture
+        }
         persist(room)
     }
 
@@ -1000,7 +1023,7 @@ struct FloorPlanScreen: View {
         room.openings.append(CornerRoom.Opening(kind: kind, wallIndex: wallIndex,
                                                 offsetMeters: offsetOnWall, widthMeters: width))
         persist(room)
-        flashConfirmation("\(kind.rawValue) added — Wall \(wallIndex + 1)")
+        flashConfirmation("\(kind.rawValue) added: Wall \(wallIndex + 1)")
     }
 
     // MARK: - Panes
@@ -1037,7 +1060,7 @@ struct FloorPlanScreen: View {
     private var rotateBanner: String? {
         guard let id = freeRotateFixtureID,
               let fixture = cornerRoom?.fixtures.first(where: { $0.id == id }) else { return nil }
-        return "\(fixture.kind.rawValue) \(Int(fixture.rotationDegrees.rounded()))° — twist with two fingers, tap to finish"
+        return "\(fixture.kind.rawValue) \(Int(fixture.rotationDegrees.rounded()))°. Twist with two fingers, tap to finish"
     }
 
     /// Live wall lengths pinned to the point being dragged — both adjacent
@@ -1127,8 +1150,8 @@ struct FloorPlanScreen: View {
         let sideA = nearestHit(nx, nz)
         let sideB = nearestHit(-nx, -nz)
         guard sideA != nil || sideB != nil else { return nil }
-        let textA = sideA.map { Measure.length($0, imperial: useImperial) } ?? "—"
-        let textB = sideB.map { Measure.length($0, imperial: useImperial) } ?? "—"
+        let textA = sideA.map { Measure.length($0, imperial: useImperial) } ?? "n/a"
+        let textB = sideB.map { Measure.length($0, imperial: useImperial) } ?? "n/a"
         return "\(textA) ◀ partition ▶ \(textB)"
     }
 
@@ -1356,7 +1379,7 @@ struct FloorPlanScreen: View {
                         Button {
                             editingOpening = opening
                         } label: {
-                            Text("\(opening.kind.rawValue) — \(opening.interiorWallID == nil ? "Wall \(opening.wallIndex + 1)" : "Interior wall"), \(Measure.length(opening.offsetMeters, imperial: useImperial)) from corner, \(Measure.length(opening.widthMeters, imperial: useImperial)) wide")
+                            Text("\(opening.kind.rawValue): \(opening.interiorWallID == nil ? "Wall \(opening.wallIndex + 1)" : "Interior wall"), \(Measure.length(opening.offsetMeters, imperial: useImperial)) from corner, \(Measure.length(opening.widthMeters, imperial: useImperial)) wide")
                                 .font(.subheadline)
                                 .foregroundStyle(.primary)
                         }
@@ -1375,7 +1398,7 @@ struct FloorPlanScreen: View {
                         Button {
                             editingInterior = wall
                         } label: {
-                            Text("Interior wall — \(Measure.length(wall.lengthMeters, imperial: useImperial))")
+                            Text("Interior wall: \(Measure.length(wall.lengthMeters, imperial: useImperial))")
                                 .font(.subheadline)
                                 .foregroundStyle(.primary)
                         }
@@ -1394,7 +1417,7 @@ struct FloorPlanScreen: View {
                         Button {
                             editingFixture = fixture
                         } label: {
-                            Text("\(fixture.kind.rawValue) — \(Measure.length(fixture.widthMeters, imperial: useImperial)) × \(Measure.length(fixture.depthMeters, imperial: useImperial))")
+                            Text("\(fixture.kind.rawValue): \(Measure.length(fixture.widthMeters, imperial: useImperial)) × \(Measure.length(fixture.depthMeters, imperial: useImperial))")
                                 .font(.subheadline)
                                 .foregroundStyle(.primary)
                         }
@@ -1419,7 +1442,7 @@ struct FloorPlanScreen: View {
                                 Text(marker.kind.rawValue)
                                     .foregroundStyle(.primary)
                                 if !marker.label.isEmpty {
-                                    Text("— \(marker.label)")
+                                    Text("(\(marker.label))")
                                         .foregroundStyle(.secondary)
                                 }
                             }
@@ -1483,7 +1506,7 @@ struct FloorPlanScreen: View {
                 Section {
                     DimensionRow(label: "Correct length", meters: $editLength, imperial: useImperial)
                 } footer: {
-                    Text("Wall \((editingWallIndex ?? 0) + 1) — opposite walls adjust proportionally so the room stays closed.")
+                    Text("Wall \((editingWallIndex ?? 0) + 1). Opposite walls adjust proportionally so the room stays closed.")
                 }
             }
             .navigationTitle("Correct Dimension")
@@ -1643,9 +1666,15 @@ struct FloorPlanScreen: View {
                         rotationRadians = rotationBase + value.rotation.radians
                     }
                     .onEnded { _ in
-                        if freeRotateFixtureID != nil {
+                        if let id = freeRotateFixtureID {
                             freeRotateBase = nil
-                            if let room = cornerRoom { persist(room) }
+                            if var room = cornerRoom {
+                                if let index = room.fixtures.firstIndex(where: { $0.id == id }),
+                                   let snap = room.fixtureSnappedToWall(room.fixtures[index], maxAngleDegrees: 7) {
+                                    room.fixtures[index] = snap.fixture
+                                }
+                                persist(room)
+                            }
                             return
                         }
                         rotationBase = rotationRadians
@@ -1772,10 +1801,11 @@ struct FloorPlanScreen: View {
         if let kind = placingFixtureKind {
             guard var room = cornerRoom, let point = planPoint(fromView: location, size: size) else { return }
             let defaults = kind.defaultSize
-            let fixture = CornerRoom.Fixture(kind: kind,
+            let dropped = CornerRoom.Fixture(kind: kind,
                                              x: Double(point.x), z: Double(point.y),
                                              widthMeters: defaults.width,
                                              depthMeters: defaults.depth)
+            let fixture = room.fixtureSnappedToWall(dropped, maxAngleDegrees: 360)?.fixture ?? dropped
             room.fixtures.append(fixture)
             persist(room)
             placingFixtureKind = nil
@@ -1844,7 +1874,7 @@ struct FloorPlanScreen: View {
             let end = axisAligned(snappedPoint, from: start)
             let length = ((end.x - start.x) * (end.x - start.x) + (end.z - start.z) * (end.z - start.z)).squareRoot()
             guard length > 0.2 else {
-                editError = "That wall would be shorter than 8 inches — tap further away."
+                editError = "That wall would be shorter than 8 inches. Tap further away."
                 return
             }
             room.interiorWalls.append(CornerRoom.InteriorWall(start: start, end: end))
@@ -2066,6 +2096,18 @@ struct FloorPlanScreen: View {
                     if let index = updated.fixtures.firstIndex(where: { $0.id == id }) {
                         updated.fixtures[index].x = gridSnapped(newX)
                         updated.fixtures[index].z = gridSnapped(newZ)
+                        // Snap from the pre-drag angle every frame, so
+                        // pulling away from a wall gives the original
+                        // rotation back instead of keeping the last snap.
+                        if let base = dragUndoBaseline?.fixtures.first(where: { $0.id == id }) {
+                            updated.fixtures[index].rotationDegrees = base.rotationDegrees
+                        }
+                        if let snap = updated.fixtureSnappedToWall(updated.fixtures[index]) {
+                            updated.fixtures[index] = snap.fixture
+                            dragReadout = snap.tuckedIntoCorner ? "Tucked into the corner" : "Flush with the wall"
+                        } else {
+                            dragReadout = nil
+                        }
                     }
                 case .opening:
                     break   // handled earlier, before this block
@@ -2083,7 +2125,7 @@ struct FloorPlanScreen: View {
            let room = cornerRoom, dragReadout == nil,
            nearestOutlineWall(to: value.startLocation, size: size, in: room) != nil
                || nearestInteriorWall(to: value.startLocation, size: size, in: room) != nil {
-            dragReadout = "Panning — tap Edit to move walls"
+            dragReadout = "Panning. Tap Edit to move walls"
         }
         offset = CGSize(width: offsetBase.width + value.translation.width,
                         height: offsetBase.height + value.translation.height)
@@ -2327,7 +2369,7 @@ struct FloorPlanScreen: View {
         room.openings.append(CornerRoom.Opening(kind: kind, wallIndex: wallIndex,
                                                 offsetMeters: offsetOnWall, widthMeters: width))
         persist(room)
-        flashConfirmation("\(kind.rawValue) added — Wall \(wallIndex + 1)")
+        flashConfirmation("\(kind.rawValue) added: Wall \(wallIndex + 1)")
     }
 
     private enum WallTarget {
@@ -2382,7 +2424,7 @@ struct FloorPlanScreen: View {
         opening.interiorWallID = interiorWallID
         room.openings.append(opening)
         persist(room)
-        flashConfirmation("\(kind.rawValue) added — interior wall")
+        flashConfirmation("\(kind.rawValue) added: interior wall")
     }
 
     private func placeInteriorOpeningFromDialog(_ kind: CornerRoom.Opening.Kind) {
@@ -2408,7 +2450,7 @@ struct FloorPlanScreen: View {
                     Toggle("Markers", isOn: layerBinding(\.markers))
                     Toggle("Right-Angle Squares", isOn: layerBinding(\.rightAngles))
                 } footer: {
-                    Text("Layers apply on screen and in every export — hide clutter for a client plan, show everything for a permit set.")
+                    Text("Layers apply on screen and in every export. Hide clutter for a client plan, show everything for a permit set.")
                 }
                 Button("Show All Layers") {
                     layers = PlanLayers()
@@ -2554,7 +2596,7 @@ struct FloorPlanScreen: View {
             room.fixtures.append(fixture)
         }
         persist(room)
-        flashConfirmation("\(assembly.name) placed — drag pieces into position")
+        flashConfirmation("\(assembly.name) placed. Drag pieces into position")
     }
 
     private func saveAssembly() {
@@ -2730,7 +2772,7 @@ struct FloorPlanScreen: View {
     private func eraseOutlineWall(_ index: Int) {
         guard let room = cornerRoom else { return }
         guard room.corners.count > 3 else {
-            editError = "A room needs at least 3 walls — move corners instead of deleting."
+            editError = "A room needs at least 3 walls. Move corners instead of deleting."
             return
         }
         cornerActionIndex = (index + 1) % room.corners.count
@@ -2955,7 +2997,7 @@ struct FloorPlanScreen: View {
                 Section {
                     Picker("Wall", selection: $calibrationWallIndex) {
                         ForEach(0..<(cornerRoom?.corners.count ?? 0), id: \.self) { index in
-                            Text("Wall \(index + 1) — \(Measure.length(outlineWallLength(index), imperial: useImperial))")
+                            Text("Wall \(index + 1): \(Measure.length(outlineWallLength(index), imperial: useImperial))")
                                 .tag(index)
                         }
                     }
@@ -3002,7 +3044,7 @@ struct FloorPlanScreen: View {
     }
 
     private var calibrationDeviationText: String {
-        guard let factor = calibrationFactor else { return "—" }
+        guard let factor = calibrationFactor else { return "n/a" }
         return String(format: "%+.1f%%", (factor - 1) * 100)
     }
 
@@ -3045,7 +3087,7 @@ struct FloorPlanScreen: View {
             }
             showingWallEdit = false
         } else {
-            editError = "This wall can't be adjusted automatically — correct the opposite wall instead, or recapture the room."
+            editError = "This wall can't be adjusted automatically. Correct the opposite wall instead, or recapture the room."
         }
     }
 
@@ -3104,7 +3146,7 @@ struct FloorPlanScreen: View {
     private func convertManualPlanInEditor() {
         guard let manual = ScanStore.loadManualRoom(for: project),
               let converted = CornerRoom(manual: manual) else {
-            editError = "The manual measurements couldn't be converted — check the room's width and length."
+            editError = "The manual measurements couldn't be converted. Check the room's width and length."
             return
         }
         var entries = rooms
@@ -3193,7 +3235,7 @@ struct FixtureCatalogSheet: View {
                                 onPickAssembly?(assembly)
                                 dismiss()
                             } label: {
-                                Label("\(assembly.name) — \(assembly.fixtures.count) pieces",
+                                Label("\(assembly.name): \(assembly.fixtures.count) pieces",
                                       systemImage: "square.stack.3d.up")
                                     .foregroundStyle(.primary)
                             }
@@ -3246,7 +3288,7 @@ struct FixtureCatalogSheet: View {
                             }
                         }
                     } header: {
-                        Text("Flooring — whole room")
+                        Text("Flooring: whole room")
                     } footer: {
                         Text("Applies to this room's floor in the 3D model.")
                     }
@@ -3416,7 +3458,7 @@ struct FixtureEditorSheet: View {
                                                                  imperial: imperial))
                         }
                     } footer: {
-                        Text("Steps lay out along the run and climb to the ceiling in the 3D model. A comfortable stair is roughly 10\" treads with a 7–7¾\" rise.")
+                        Text("Steps lay out along the run and climb to the ceiling in the 3D model. A comfortable stair is roughly 10\" treads with a 7 to 7¾\" rise.")
                     }
                 }
                 Section {
@@ -3447,7 +3489,7 @@ struct FixtureEditorSheet: View {
                         dismiss()
                     }
                 } footer: {
-                    Text("Drag the fixture on the plan in Edit Walls mode to reposition it.")
+                    Text("Drag the fixture on the plan in Edit Walls mode to reposition it. Drop it near a wall and it squares up flush against that wall, or tucks into the corner.")
                 }
             }
             .navigationTitle(fixture.kind.rawValue)

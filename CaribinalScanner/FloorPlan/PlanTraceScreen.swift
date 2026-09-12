@@ -192,12 +192,12 @@ struct PlanTraceScreen: View {
         case .scaleA:
             return detectedDimensions.isEmpty
                 ? "Set the scale: tap ONE end of a dimension you know (zoom in for precision)."
-                : "AI read \(detectedDimensions.count) dimension labels (green boxes). Tap ONE end of a labelled wall — the length fills in automatically."
+                : "AI read \(detectedDimensions.count) dimension labels (green boxes). Tap ONE end of a labelled wall. The length fills in automatically."
         case .scaleB:
             return "Now tap the OTHER end of that known dimension."
         case .trace:
             if let dxfUnitsName {
-                return "DXF imported at exact scale (\(dxfUnitsName)). Use the AI outline below, or tap corners (\(corners.count) placed) — taps snap to the drawing's own points."
+                return "DXF imported at exact scale (\(dxfUnitsName)). Use the AI outline below, or tap corners (\(corners.count) placed). Taps snap to the drawing's own points."
             }
             return "Tap each room corner in order around the room (\(corners.count) placed). The last wall closes automatically."
         }
@@ -393,8 +393,8 @@ struct PlanTraceScreen: View {
                     DimensionRow(label: "Real-world distance", meters: $knownDistance, imperial: useImperial)
                 } footer: {
                     Text(aiSuggestion != nil
-                         ? "Auto-filled from the drawing's dimension text — adjust it if the AI grabbed the wrong label."
-                         : "The actual distance between the two blue points — read it off the drawing's dimension text.")
+                         ? "Auto-filled from the drawing's dimension text. Adjust it if the AI grabbed the wrong label."
+                         : "The actual distance between the two blue points. Read it off the drawing's dimension text.")
                 }
             }
             .navigationTitle("Set Scale")

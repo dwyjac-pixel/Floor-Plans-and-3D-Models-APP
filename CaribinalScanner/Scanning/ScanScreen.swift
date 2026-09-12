@@ -107,7 +107,7 @@ struct ScanScreen: View {
             .padding(.bottom, 8)
         } else if controller.didFail {
             VStack(spacing: 10) {
-                Text("Scan failed — the camera lost tracking.")
+                Text("Scan failed: the camera lost tracking.")
                     .font(.callout.weight(.medium))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
@@ -177,8 +177,8 @@ struct ScanScreen: View {
                         dismissOnAlertClose = result.added > 0
                         let added = result.added == 1 ? "1 room" : "\(result.added) rooms"
                         saveError = result.added > 0
-                            ? "\(added) added to \(floorName). \(result.failed) couldn't build a clean outline — rescan that one with a slower walk-through."
-                            : "This room couldn't build a clean outline — try rescanning with a slower walk-through. The raw scan data was kept."
+                            ? "\(added) added to \(floorName). \(result.failed) couldn't build a clean outline. Rescan that one with a slower walk-through."
+                            : "This room couldn't build a clean outline. Try rescanning with a slower walk-through. The raw scan data was kept."
                     } else {
                         dismiss()
                     }

@@ -89,7 +89,7 @@ struct PriceAnalysisScreen: View {
         } header: {
             Text("Job Location")
         } footer: {
-            Text("Runs entirely on this iPhone — no API key, no internet, nothing leaves the device. The AI reasons from your quote, your Price Book, and the region; it does not know live market prices.")
+            Text("Runs entirely on this iPhone. No API key, no internet, nothing leaves the device. The AI reasons from your quote, your Price Book, and the region; it does not know live market prices.")
         }
 
         if let summary {
@@ -195,7 +195,7 @@ struct PriceAnalysisScreen: View {
         guard #available(iOS 26.0, *) else { return }
         let rooms = ScanStore.loadRooms(for: project).map(\.room)
         guard !rooms.isEmpty else {
-            errorMessage = "Add rooms and price the material takeoff first — the AI reviews the numbers you've entered."
+            errorMessage = "Add rooms and price the material takeoff first. The AI reviews the numbers you've entered."
             return
         }
         let takeoff = MaterialTakeoff.calculate(rooms: rooms)

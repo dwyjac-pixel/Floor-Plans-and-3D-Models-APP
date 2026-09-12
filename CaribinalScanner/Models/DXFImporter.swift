@@ -223,13 +223,13 @@ enum DXFImporter {
             (metersPerUnit, unitsName) = (0.001, "millimetres")
         default:
             if extent < 18 {
-                (metersPerUnit, unitsName) = (1, "metres — assumed")
+                (metersPerUnit, unitsName) = (1, "metres, assumed")
             } else if extent < 60 {
-                (metersPerUnit, unitsName) = (0.3048, "feet — assumed")
+                (metersPerUnit, unitsName) = (0.3048, "feet, assumed")
             } else if extent < 3000 {
-                (metersPerUnit, unitsName) = (0.0254, "inches — assumed")
+                (metersPerUnit, unitsName) = (0.0254, "inches, assumed")
             } else {
-                (metersPerUnit, unitsName) = (0.001, "millimetres — assumed")
+                (metersPerUnit, unitsName) = (0.001, "millimetres, assumed")
             }
         }
 

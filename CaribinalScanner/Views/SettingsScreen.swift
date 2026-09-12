@@ -36,7 +36,7 @@ struct SettingsScreen: View {
                 } header: {
                     Text("Units")
                 } footer: {
-                    Text("Applies everywhere — plans, 3D models, estimates, and every export.")
+                    Text("Applies everywhere: plans, 3D models, estimates, and every export.")
                 }
 
                 Section {
@@ -49,7 +49,7 @@ struct SettingsScreen: View {
                 } header: {
                     Text("3D Model")
                 } footer: {
-                    Text("Per-wall paint set in the editor always wins — this is the default finish. Reopen the 3D view to see a change.")
+                    Text("Per-wall paint set in the editor always wins. This is the default finish. Reopen the 3D view to see a change.")
                 }
 
                 Section {
@@ -85,10 +85,16 @@ struct SettingsScreen: View {
                 Section {
                     LabeledContent("Version",
                                    value: (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "1.0")
+                    Link(destination: URL(string: "https://dwyjac-pixel.github.io/interior-ai-reno-planner/privacy.html")!) {
+                        Label("Privacy Policy", systemImage: "hand.raised")
+                    }
+                    Link(destination: URL(string: "https://caribinalcreations.ca")!) {
+                        Label("Support", systemImage: "questionmark.circle")
+                    }
                 } header: {
                     Text("About")
                 } footer: {
-                    Text("Interior AI Reno Planner — scan, plan, price, and permit basement suites from one phone.")
+                    Text("Interior AI Reno Planner: scan, plan, price, and permit basement suites from one phone.")
                 }
             }
             .navigationTitle("Settings")

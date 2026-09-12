@@ -69,13 +69,13 @@ struct SuiteCompliance {
                 title: "Ceiling height",
                 status: lowest >= preset.minCeilingMeters ? .pass : .fail,
                 detail: "Lowest recorded ceiling is \(Measure.length(lowest, imperial: true)); a secondary suite needs \(Measure.length(preset.minCeilingMeters, imperial: true)) over required areas.",
-                reference: "NBC 9.5.3 — suite ceiling heights",
+                reference: "NBC 9.5.3: suite ceiling heights",
                 measured: true))
         } else if !rooms.isEmpty {
             checks.append(Check(
                 title: "Ceiling height",
                 status: .unknown,
-                detail: "No ceiling height recorded — set it with Adjust Ceiling Height in the floor plan editor.",
+                detail: "No ceiling height recorded. Set it with Adjust Ceiling Height in the floor plan editor.",
                 reference: "NBC 9.5.3",
                 measured: true))
         }
@@ -95,7 +95,7 @@ struct SuiteCompliance {
                 title: "Suite floor area",
                 status: capacity == 0 ? .warning : .pass,
                 detail: capacity == 0
-                    ? "\(Int(squareFeet.rounded())) sq ft is small for a self-contained suite — best suited to partial development."
+                    ? "\(Int(squareFeet.rounded())) sq ft is small for a self-contained suite and is best suited to partial development."
                     : "\(Int(squareFeet.rounded())) sq ft supports up to \(capacity) bedroom\(capacity == 1 ? "" : "s").",
                 reference: "Planning guidance (350/550/750 sq ft)",
                 measured: true))
@@ -112,7 +112,7 @@ struct SuiteCompliance {
 
             guard !windows.isEmpty else {
                 checks.append(Check(
-                    title: "\(entry.name) — egress window",
+                    title: "\(entry.name): egress window",
                     status: .fail,
                     detail: "No window on this bedroom's plan. Every suite bedroom needs an openable egress window unless the home is sprinklered.",
                     reference: "NBC 9.9.10.1",
@@ -164,35 +164,35 @@ struct SuiteCompliance {
             let sizeText = windows.count == 1 ? "its window" : "its best window"
             if clearMeasuredPass {
                 checks.append(Check(
-                    title: "\(entry.name) — egress window",
+                    title: "\(entry.name): egress window",
                     status: .pass,
                     detail: "Recorded clear opening meets the \(String(format: "%.2f", preset.egressOpenAreaM2)) m² unobstructed opening with no dimension under 380 mm.",
                     reference: "NBC 9.9.10.1",
                     measured: true))
             } else if passesAsSlider, !frameHeightAssumed {
                 checks.append(Check(
-                    title: "\(entry.name) — egress window",
+                    title: "\(entry.name): egress window",
                     status: .pass,
-                    detail: "Meets the \(String(format: "%.2f", preset.egressOpenAreaM2)) m² unobstructed opening with no dimension under 380 mm — even as a slider.",
+                    detail: "Meets the \(String(format: "%.2f", preset.egressOpenAreaM2)) m² unobstructed opening with no dimension under 380 mm, even as a slider.",
                     reference: "NBC 9.9.10.1",
                     measured: true))
             } else if passesAsSlider {
                 checks.append(Check(
-                    title: "\(entry.name) — egress window",
+                    title: "\(entry.name): egress window",
                     status: .warning,
-                    detail: "\(sizeText.capitalized) looks large enough, but its height was assumed (1.07 m default) and no unobstructed opening was recorded — measure the clear opening to confirm egress.",
+                    detail: "\(sizeText.capitalized) looks large enough, but its height was assumed (1.07 m default) and no unobstructed opening was recorded. Measure the clear opening to confirm egress.",
                     reference: "NBC 9.9.10.1",
                     measured: true))
             } else if passesAsCasement {
                 checks.append(Check(
-                    title: "\(entry.name) — egress window",
+                    title: "\(entry.name): egress window",
                     status: .warning,
-                    detail: "\(sizeText.capitalized) passes only if it opens fully (casement/awning). A slider of this size would not clear \(String(format: "%.2f", preset.egressOpenAreaM2)) m² — confirm the window style.",
+                    detail: "\(sizeText.capitalized) passes only if it opens fully (casement/awning). A slider of this size would not clear \(String(format: "%.2f", preset.egressOpenAreaM2)) m². Confirm the window style.",
                     reference: "NBC 9.9.10.1",
                     measured: true))
             } else {
                 checks.append(Check(
-                    title: "\(entry.name) — egress window",
+                    title: "\(entry.name): egress window",
                     status: .fail,
                     detail: anyClearRecorded
                         ? "The recorded clear opening is below the \(String(format: "%.2f", preset.egressOpenAreaM2)) m² / 380 mm egress minimum. Plan a larger egress window here."
@@ -203,9 +203,9 @@ struct SuiteCompliance {
 
             if bestSill < Double.greatestFiniteMagnitude, bestSill > preset.maxSillMeters {
                 checks.append(Check(
-                    title: "\(entry.name) — window sill height",
+                    title: "\(entry.name): window sill height",
                     status: .warning,
-                    detail: "Egress sill sits \(Measure.length(bestSill, imperial: true)) above the floor — above the \(Measure.length(preset.maxSillMeters, imperial: true)) guidance. Built-in steps or furniture fixed below the window may be required.",
+                    detail: "Egress sill sits \(Measure.length(bestSill, imperial: true)) above the floor (above the \(Measure.length(preset.maxSillMeters, imperial: true)) guidance). Built-in steps or furniture fixed below the window may be required.",
                     reference: "NBC 9.9.10.1 guidance",
                     measured: true))
             }
@@ -214,7 +214,7 @@ struct SuiteCompliance {
             if area > 1 {
                 let ratio = glassArea / area
                 checks.append(Check(
-                    title: "\(entry.name) — natural light",
+                    title: "\(entry.name): natural light",
                     status: ratio >= preset.bedroomLightRatio ? .pass : .warning,
                     detail: String(format: "Window glass is %.1f%% of the floor area (%.0f%% required for bedrooms).",
                                    ratio * 100, preset.bedroomLightRatio * 100),
@@ -228,7 +228,7 @@ struct SuiteCompliance {
                 title: "Bedroom identification",
                 status: .unknown,
                 detail: "The estimate plans \(estimate?.bedrooms ?? 0) bedroom(s), but no room is named \"Bedroom\". Rename rooms in the project's Rooms section to check egress and light automatically.",
-                reference: "—",
+                reference: "n/a",
                 measured: true))
         }
 
@@ -253,31 +253,31 @@ struct SuiteCompliance {
         declared("Separate entrance",
                  ok: planned("Side-door entrance") || (estimate?.sideDoorEntrance ?? false),
                  okDetail: "A separate entrance is in the plan.",
-                 missingDetail: "A secondary suite needs its own entrance — add the side-door entrance to the plan or confirm one exists.",
-                 reference: "NBC 9.9.9 — egress from suites")
+                 missingDetail: "A secondary suite needs its own entrance. Add the side-door entrance to the plan or confirm one exists.",
+                 reference: "NBC 9.9.9: egress from suites")
 
         declared("Fire separation",
                  ok: planned("Fire separation"),
                  okDetail: "Fire separation between the suite and the rest of the house is planned.",
-                 missingDetail: "A fire separation (typically 30 min, or smoke-tight with sprinklers/interconnected alarms) is required between dwelling units — not yet in the plan.",
+                 missingDetail: "A fire separation (typically 30 min, or smoke-tight with sprinklers/interconnected alarms) is required between dwelling units. It is not yet in the plan.",
                  reference: "NBC 9.10.9")
 
         declared("Smoke & CO alarms",
                  ok: planned("Smoke & CO alarms (interconnected)"),
                  okDetail: "Interconnected smoke/CO alarms are planned.",
-                 missingDetail: "Interconnected smoke alarms (suite + main dwelling) and CO alarms are required — not yet in the checklist.",
+                 missingDetail: "Interconnected smoke alarms (suite + main dwelling) and CO alarms are required. They are not yet in the checklist.",
                  reference: "NBC 9.10.19 / 9.32.3.9")
 
         declared("Bathroom",
                  ok: planned("Bathroom") || (estimate?.bathrooms ?? 0) > 0 || hasToilet,
                  okDetail: "A bathroom is in the plan.",
-                 missingDetail: "A self-contained suite needs its own bathroom — none found in the plan, estimate, or fixtures.",
+                 missingDetail: "A self-contained suite needs its own bathroom. None found in the plan, estimate, or fixtures.",
                  reference: "MB secondary suite guidelines")
 
         declared("Kitchen",
                  ok: planned("Kitchen / kitchenette") || (estimate.map { $0.kitchen != .none } ?? false) || hasKitchenFixture,
                  okDetail: "A kitchen or kitchenette is in the plan.",
-                 missingDetail: "A self-contained suite needs cooking facilities — none found in the plan, estimate, or fixtures.",
+                 missingDetail: "A self-contained suite needs cooking facilities. None found in the plan, estimate, or fixtures.",
                  reference: "MB secondary suite guidelines")
 
         declared("Sound separation",

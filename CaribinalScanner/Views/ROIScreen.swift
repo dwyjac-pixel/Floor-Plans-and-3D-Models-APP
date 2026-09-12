@@ -74,7 +74,7 @@ struct ROIScreen: View {
 
             Section {
             } footer: {
-                Text("Planning math only — not financial advice. Verify local rents, taxes, and financing with your own numbers.")
+                Text("Planning math only, not financial advice. Verify local rents, taxes, and financing with your own numbers.")
             }
         }
         .frame(maxWidth: 640)

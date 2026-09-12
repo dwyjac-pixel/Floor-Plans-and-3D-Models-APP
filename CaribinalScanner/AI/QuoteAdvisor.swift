@@ -125,7 +125,7 @@ enum QuoteAdvisor {
                 } else {
                     text += " (no price entered)"
                 }
-                if !line.note.isEmpty { text += " — \(line.note)" }
+                if !line.note.isEmpty { text += ". Note: \(line.note)" }
                 lines.append(text)
             }
             lines.append("Included takeoff total: \(Money.format(adjustments.total(for: takeoff)))")
@@ -134,7 +134,7 @@ enum QuoteAdvisor {
         if let estimate {
             lines.append("\nESTIMATE:")
             for line in estimate.lines {
-                lines.append("- \(line.label): \(Money.format(line.low)) – \(Money.format(line.high))")
+                lines.append("- \(line.label): \(Money.format(line.low)) to \(Money.format(line.high))")
             }
             lines.append("Estimate range: \(estimate.rangeText)")
         }
@@ -148,7 +148,7 @@ enum QuoteAdvisor {
         property-flip app used by contractors and investors. The user has \
         captured the property below and built a quote from it. Help them \
         decide what should be replaced, fixed, added, or removed from the \
-        quote — and why — so the scope and budget fit the project's goal.
+        quote, and why, so the scope and budget fit the project's goal.
 
         Guidelines:
         - Ground every suggestion in the project data below. Refer to \
@@ -161,7 +161,7 @@ enum QuoteAdvisor {
         - Flag anything that commonly needs a permit or an inspection.
         - Keep responses focused and brief; use short lists, not essays. \
         You are advising a professional, not writing a report.
-        - You cannot see photos or the site itself — say so when a question \
+        - You cannot see photos or the site itself. Say so when a question \
         needs eyes on site, and say what to check.
 
         PROJECT DATA:
