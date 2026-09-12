@@ -101,7 +101,7 @@ struct EstimateLine: Identifiable {
     let high: Double
 
     var rangeText: String {
-        low == high ? Money.format(low) : "\(Money.format(low)) – \(Money.format(high))"
+        low == high ? Money.format(low) : "\(Money.format(low)) to \(Money.format(high))"
     }
 }
 
@@ -111,9 +111,9 @@ struct EstimateResult {
 
     var totalLow: Double { lines.reduce(0) { $0 + $1.low } }
     var totalHigh: Double { lines.reduce(0) { $0 + $1.high } }
-    var rangeText: String { "\(Money.format(totalLow)) – \(Money.format(totalHigh))" }
-    var materialsText: String { "\(Money.format(totalLow * 0.45)) – \(Money.format(totalHigh * 0.45))" }
-    var labourText: String { "\(Money.format(totalLow * 0.55)) – \(Money.format(totalHigh * 0.55))" }
+    var rangeText: String { "\(Money.format(totalLow)) to \(Money.format(totalHigh))" }
+    var materialsText: String { "\(Money.format(totalLow * 0.45)) to \(Money.format(totalHigh * 0.45))" }
+    var labourText: String { "\(Money.format(totalLow * 0.55)) to \(Money.format(totalHigh * 0.55))" }
 }
 
 /// Builds the planning range from the user's PriceBook rates. Shipped
@@ -144,7 +144,7 @@ enum EstimateCalculator {
         case .premium: rate = book.finishPremiumPerSqFt
         }
         lines.append(EstimateLine(
-            label: "Finishing — \(inputs.finishLevel.rawValue.lowercased()), \(Int(squareFeet.rounded())) sq ft",
+            label: "Finishing: \(inputs.finishLevel.rawValue.lowercased()), \(Int(squareFeet.rounded())) sq ft",
             low: squareFeet * rate.low,
             high: squareFeet * rate.high))
 
@@ -238,7 +238,7 @@ enum Money {
     static func format(_ value: Double) -> String {
         // Guard against NaN/±inf and out-of-range values reachable from
         // unvalidated money/rate fields — Int(_:) traps on those (QA-027).
-        guard value.isFinite else { return "—" }
+        guard value.isFinite else { return "n/a" }
         let clamped = min(max(value.rounded(), -9_000_000_000_000), 9_000_000_000_000)
         return "$" + Int(clamped).formatted(.number.grouping(.automatic))
     }

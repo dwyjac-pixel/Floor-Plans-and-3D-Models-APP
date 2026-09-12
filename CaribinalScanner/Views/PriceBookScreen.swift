@@ -9,9 +9,9 @@ struct PriceBookScreen: View {
     var body: some View {
         Form {
             Section("Per square foot") {
-                RateRow("Finishing — basic", $book.finishBasicPerSqFt)
-                RateRow("Finishing — standard", $book.finishStandardPerSqFt)
-                RateRow("Finishing — premium", $book.finishPremiumPerSqFt)
+                RateRow("Finishing: basic", $book.finishBasicPerSqFt)
+                RateRow("Finishing: standard", $book.finishStandardPerSqFt)
+                RateRow("Finishing: premium", $book.finishPremiumPerSqFt)
                 RateRow("Demolition", $book.demolitionPerSqFt)
                 RateRow("Tile flooring upgrade", $book.tileUpgradePerSqFt)
                 RateRow("Drop ceiling", $book.dropCeilingPerSqFt)
@@ -19,8 +19,8 @@ struct PriceBookScreen: View {
 
             Section("Rooms") {
                 RateRow("Bedroom allowance (each)", $book.bedroomAllowance)
-                RateRow("Bathroom — basic finish", $book.bathroomBasic)
-                RateRow("Bathroom — standard / premium", $book.bathroomUpgraded)
+                RateRow("Bathroom: basic finish", $book.bathroomBasic)
+                RateRow("Bathroom: standard / premium", $book.bathroomUpgraded)
                 RateRow("Kitchenette", $book.kitchenette)
                 RateRow("Full kitchen", $book.fullKitchen)
             }
@@ -29,10 +29,10 @@ struct PriceBookScreen: View {
                 RateRow("Egress window (each)", $book.egressWindow)
                 RateRow("Side-door entrance", $book.sideDoorEntrance)
                 RateRow("Laundry", $book.laundry)
-                RateRow("Plumbing — medium run", $book.plumbingMedium)
-                RateRow("Plumbing — long run", $book.plumbingLong)
-                RateRow("Electrical — moderate", $book.electricalModerate)
-                RateRow("Electrical — complex / panel", $book.electricalComplex)
+                RateRow("Plumbing: medium run", $book.plumbingMedium)
+                RateRow("Plumbing: long run", $book.plumbingLong)
+                RateRow("Electrical: moderate", $book.electricalModerate)
+                RateRow("Electrical: complex / panel", $book.electricalComplex)
             }
 
             Section {
@@ -78,7 +78,7 @@ private struct RateRow: View {
                 .font(.subheadline)
             HStack(spacing: 6) {
                 field(value: lowBinding, placeholder: "Low")
-                Text("–")
+                Text("to")
                     .foregroundStyle(.secondary)
                 field(value: highBinding, placeholder: "High")
             }

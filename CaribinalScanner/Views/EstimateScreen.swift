@@ -45,7 +45,7 @@ struct EstimateScreen: View {
                 Text("Floor Area")
             } footer: {
                 planAreaSquareMeters == nil
-                    ? Text("No floor plan yet — enter the square footage to estimate against.")
+                    ? Text("No floor plan yet. Enter the square footage to estimate against.")
                     : Text("Area comes from the saved floor plan.")
             }
 
@@ -99,7 +99,7 @@ struct EstimateScreen: View {
                 } header: {
                     Text("Rough Range")
                 } footer: {
-                    Text("A fast planning range from your Price Book — not a quote. Once rooms are captured, build the itemized, taxed Quote under Materials → Quote for the real deliverable.")
+                    Text("A fast planning range from your Price Book, not a quote. Once rooms are captured, build the itemized, taxed Quote under Materials → Quote for the real deliverable.")
                 }
             }
 

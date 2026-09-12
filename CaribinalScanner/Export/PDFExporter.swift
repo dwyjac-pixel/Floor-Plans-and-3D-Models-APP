@@ -167,7 +167,7 @@ enum PDFExporter {
                 for fact in facts {
                     y = drawText(fact, font: .systemFont(ofSize: 13), y: y + 2)
                 }
-                drawCentered("Prepared with Interior AI Reno Planner — \(profile.businessName)", attributes: [
+                drawCentered("Prepared with Interior AI Reno Planner   ·   \(profile.businessName)", attributes: [
                     .font: UIFont.systemFont(ofSize: 9),
                     .foregroundColor: UIColor.gray,
                 ], y: pageRect.height - 48)
@@ -182,7 +182,7 @@ enum PDFExporter {
                     ("Email", project.email),
                     ("Project type", project.projectType),
                     ("Created", project.createdAt.formatted(date: .long, time: .omitted)),
-                    ("Scan date", project.scanDate?.formatted(date: .long, time: .shortened) ?? "—"),
+                    ("Scan date", project.scanDate?.formatted(date: .long, time: .shortened) ?? "n/a"),
                     ("Estimate status", project.estimateStatus),
                     ("Permit status", project.permitStatus),
                 ]
@@ -272,7 +272,7 @@ enum PDFExporter {
 
                 if !floorSections.isEmpty {
                     for section in floorSections {
-                        drawFloorPlanSection(title: "Floor Plan — \(section.name)",
+                        drawFloorPlanSection(title: "Floor Plan: \(section.name)",
                                              image: section.image,
                                              sectionPlan: section.plan,
                                              sectionRooms: section.rooms)
@@ -295,7 +295,7 @@ enum PDFExporter {
                         estimate: estimate)
                     y = drawText(assessment.headline, font: .boldSystemFont(ofSize: 14), y: y)
                     for note in assessment.notes {
-                        y = drawText("– \(note)", font: .systemFont(ofSize: 10), color: .darkGray, y: y)
+                        y = drawText("• \(note)", font: .systemFont(ofSize: 10), color: .darkGray, y: y)
                     }
                     y += 10
                     for item in plannedItems {
@@ -337,14 +337,14 @@ enum PDFExporter {
                                      font: .systemFont(ofSize: 12, weight: .semibold), y: y)
                         y = drawText(check.detail, font: .systemFont(ofSize: 10),
                                      color: .darkGray, y: y, indent: 16)
-                        if check.reference != "—" {
+                        if check.reference != "n/a" {
                             y = drawText(check.reference, font: .italicSystemFont(ofSize: 8),
                                          color: .gray, y: y, indent: 16)
                         }
                         y += 5
                     }
                     y += 6
-                    _ = drawText("Guidance only, based on \(compliance.preset.name) provisions. Editions and municipal requirements vary — confirm everything with the local authority before construction.",
+                    _ = drawText("Guidance only, based on \(compliance.preset.name) provisions. Editions and municipal requirements vary. Confirm everything with the local authority before construction.",
                                  font: .italicSystemFont(ofSize: 9), color: .gray, y: y)
                 }
 
@@ -382,7 +382,7 @@ enum PDFExporter {
                                      font: .systemFont(ofSize: 11), color: .darkGray, y: y)
                     }
                     y += 12
-                    _ = drawText("Preliminary planning range only — not a quote. Final pricing requires a site visit and a detailed scope of work.",
+                    _ = drawText("Preliminary planning range only, not a quote. Final pricing requires a site visit and a detailed scope of work.",
                                  font: .italicSystemFont(ofSize: 9), color: .gray, y: y)
                 }
 
@@ -411,7 +411,7 @@ enum PDFExporter {
                     y = drawKeyValueRow(label: "Annual yield",
                                         value: String(format: "%.1f%%", roi.annualYieldPercent), y: y)
                     y += 12
-                    _ = drawText("Planning math only — not financial advice. Verify local rents, taxes, and financing.",
+                    _ = drawText("Planning math only, not financial advice. Verify local rents, taxes, and financing.",
                                  font: .italicSystemFont(ofSize: 9), color: .gray, y: y)
                 }
 
@@ -439,7 +439,7 @@ enum PDFExporter {
                                 ? "\(line.item): \(line.quantity)"
                                 : "\(line.item): \(line.quantity)  (\(line.note))"
                             if let price = takeoffAdjustments.price(for: line) {
-                                rowText += "  —  \(Money.format(price))"
+                                rowText += "   ·   \(Money.format(price))"
                             }
                             if !included {
                                 rowText += "  (excluded)"
@@ -457,7 +457,7 @@ enum PDFExporter {
                                                 value: Money.format(includedTotal), y: y)
                         }
                         y += 10
-                        _ = drawText("Quantities are planning estimates with a 10% waste factor — verify before ordering.",
+                        _ = drawText("Quantities are planning estimates with a 10% waste factor. Verify before ordering.",
                                      font: .italicSystemFont(ofSize: 9), color: .gray, y: y)
                     }
                 }
@@ -596,7 +596,7 @@ enum PDFExporter {
                               column: 1, row: 2)
                     blockText(title, column: 2, row: 0, bold: true)
                     blockText("Sheet \(sheetNumber)   ·   \(generatedDate)", column: 2, row: 1)
-                    blockText("Preliminary — verify all dimensions on site", column: 2, row: 2)
+                    blockText("Preliminary: verify all dimensions on site", column: 2, row: 2)
 
                     return CGRect(x: border.minX, y: border.minY,
                                   width: border.width, height: border.height - blockHeight)
@@ -641,7 +641,7 @@ enum PDFExporter {
                     drawPlanSheet(title: "FLOOR PLAN", image: mergedPlanImage, sheetPlan: plan)
                 } else {
                     for sheet in floorSheets {
-                        drawPlanSheet(title: "FLOOR PLAN — \(sheet.name.uppercased())",
+                        drawPlanSheet(title: "FLOOR PLAN: \(sheet.name.uppercased())",
                                       image: sheet.image, sheetPlan: sheet.plan)
                     }
                 }
@@ -674,7 +674,7 @@ enum PDFExporter {
                     y += 3
                 }
                 y += 6
-                _ = drawText("Guidance only, based on \(compliance.preset.name) provisions — confirm with the local authority.",
+                _ = drawText("Guidance only, based on \(compliance.preset.name) provisions. Confirm with the local authority.",
                              font: .italicSystemFont(ofSize: 8), color: .gray, y: y)
 
                 // Sheet — required application measurements.
@@ -710,10 +710,10 @@ enum PDFExporter {
                 }
                 for entry in measurementRooms {
                     if entry.room.ceilingHeightMeters > 0 {
-                        permitRow("Ceiling height — \(measurementName(entry))",
+                        permitRow("\(measurementName(entry)) ceiling height",
                                   Measure.length(entry.room.ceilingHeightMeters, imperial: useImperial))
                     } else {
-                        permitRow("Ceiling height — \(measurementName(entry))", "not recorded")
+                        permitRow("\(measurementName(entry)) ceiling height", "not recorded")
                     }
                 }
                 for entry in measurementRooms {
@@ -724,7 +724,7 @@ enum PDFExporter {
                         } else {
                             windowHeightText = "\(Measure.length(1.07, imperial: useImperial)) (assumed)"
                         }
-                        permitRow("Window — \(measurementName(entry))",
+                        permitRow("\(measurementName(entry)) window",
                                   "\(Measure.length(window.widthMeters, imperial: useImperial)) × \(windowHeightText)")
                         if let clearW = window.clearWidthMeters, let clearH = window.clearHeightMeters {
                             permitRow("    Unobstructed opening",
@@ -740,7 +740,7 @@ enum PDFExporter {
                         } else {
                             doorHeightText = "\(Measure.length(2.03, imperial: useImperial)) (assumed)"
                         }
-                        permitRow("Door — \(measurementName(entry))",
+                        permitRow("\(measurementName(entry)) door",
                                   "\(Measure.length(door.widthMeters, imperial: useImperial)) × \(doorHeightText)")
                     }
                 }
@@ -773,7 +773,7 @@ enum PDFExporter {
                             ? "\(line.item): \(line.quantity)"
                             : "\(line.item): \(line.quantity)  (\(line.note))"
                         if let price = takeoffAdjustments.price(for: line) {
-                            rowText += "  —  \(Money.format(price))"
+                            rowText += "   ·   \(Money.format(price))"
                         }
                         if !included {
                             rowText += "  (excluded)"
@@ -792,7 +792,7 @@ enum PDFExporter {
                                             font: .boldSystemFont(ofSize: 11), y: takeoffY)
                     }
                     takeoffY += 8
-                    _ = drawText("Planning quantities with a 10% waste factor — verify before ordering.",
+                    _ = drawText("Planning quantities with a 10% waste factor. Verify before ordering.",
                                  font: .italicSystemFont(ofSize: 8), color: .gray, y: takeoffY)
                 }
             }
@@ -909,7 +909,7 @@ enum PDFExporter {
         if inputs.laundry { parts.append("laundry") }
         if inputs.demolition { parts.append("demolition") }
         let scope = parts.isEmpty ? "General basement development" : parts.joined(separator: ", ")
-        return "Scope: \(scope) — \(inputs.finishLevel.rawValue) finish, \(inputs.flooring.rawValue.lowercased()) flooring, \(inputs.ceiling.rawValue.lowercased()) ceiling, \(Int(squareFeet.rounded())) sq ft"
+        return "Scope: \(scope); \(inputs.finishLevel.rawValue.lowercased()) finish, \(inputs.flooring.rawValue.lowercased()) flooring, \(inputs.ceiling.rawValue.lowercased()) ceiling, \(Int(squareFeet.rounded())) sq ft"
     }
 
     private static func aspectFit(imageSize: CGSize, in rect: CGRect) -> CGRect {

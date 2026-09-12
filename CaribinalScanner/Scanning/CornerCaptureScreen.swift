@@ -92,7 +92,7 @@ struct CornerCaptureScreen: View {
                 }
 
                 if controller.trackingStatus == nil && controller.hint == nil && !controller.crosshairReady {
-                    Text("Aim the crosshair at the floor — it turns green when a corner can be marked.")
+                    Text("Aim the crosshair at the floor. It turns green when a corner can be marked.")
                         .font(.footnote)
                         .multilineTextAlignment(.center)
                         .padding(10)
@@ -240,13 +240,13 @@ struct CornerCaptureScreen: View {
         // the user can undo/re-mark corners.
         let polygon = points.map { SIMD2<Double>($0.x, $0.z) }
         guard ScanConverter.isSimplePolygon(polygon) else {
-            saveError = "Corners cross each other — mark corners in order around the room."
+            saveError = "Corners cross each other. Mark corners in order around the room."
             isSaving = false
             return
         }
         let captured = CornerRoom(corners: points, ceilingHeightMeters: ceilingMeters)
         guard captured.floorAreaSquareMeters >= ScanConverter.minRoomArea else {
-            saveError = "This outline is too small to be a room — mark the corners around the whole floor."
+            saveError = "This outline is too small to be a room. Mark the corners around the whole floor."
             isSaving = false
             return
         }

@@ -96,7 +96,7 @@ struct PermitMeasurementsScreen: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         } else {
-                            Text("Clear opening not recorded — tap the window on the floor plan to add it (required for egress).")
+                            Text("Clear opening not recorded. Tap the window on the floor plan to add it (required for egress).")
                                 .font(.caption)
                                 .foregroundStyle(.orange)
                         }

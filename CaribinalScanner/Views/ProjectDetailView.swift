@@ -32,15 +32,9 @@ struct ProjectDetailView: View {
     @State private var planningChecklist: PlanningChecklist?
     @State private var exportURL: URL?
     @State private var showingReportPreview = false
-    @State private var planImageURL: URL?
-    @State private var dxfURL: URL?
-    @State private var backupURL: URL?
-    @State private var showingBackupPreview = false
+    @State private var exportPreview: ExportPreview?
     @State private var permitURL: URL?
     @State private var showingPermitPreview = false
-    @State private var showingImagePreview = false
-    @State private var showingDXFPreview = false
-    @State private var showingModelPreview = false
     @State private var isExporting = false
     @State private var isExportingPermit = false
     @State private var isBackingUp = false
@@ -53,7 +47,6 @@ struct ProjectDetailView: View {
     @State private var downloadingFromCloud = false
     // The USDZ actually shared for the 3D model, resolved when the preview
     // is opened (QA-032).
-    @State private var modelShareURL: URL?
 
     // Dashboard restructure: consolidated entry points (Add Room chooser and
     // Export hub) plus quote figures cached in reloadScan() so the body stays
@@ -269,7 +262,7 @@ struct ProjectDetailView: View {
                         QuoteAdvisorScreen(project: project)
                     }
                 } else if hasLiDARData {
-                    Text("The takeoff uses captured or traced rooms. Add rooms to itemize materials — direct LiDAR-scan takeoff is coming.")
+                    Text("The takeoff uses captured or traced rooms. Add rooms to itemize materials. Direct LiDAR-scan takeoff is coming.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } else {
@@ -523,30 +516,37 @@ struct ProjectDetailView: View {
                 PDFPreviewSheet(url: permitURL)
             }
         }
-        .sheet(isPresented: $showingImagePreview) {
-            if let planImageURL, let image = UIImage(contentsOfFile: planImageURL.path) {
-                ExportPreviewSheet(title: "Floor Plan Image", url: planImageURL) {
-                    ZStack {
-                        Color.white
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
-                            .padding()
+        // One item-driven sheet for every file preview: presenting with
+        // `isPresented` plus a separately stored URL can build the sheet
+        // against stale state and show an empty panel.
+        .sheet(item: $exportPreview) { preview in
+            switch preview {
+            case .image(let url):
+                ExportPreviewSheet(title: "Floor Plan Image", url: url) {
+                    if let image = UIImage(contentsOfFile: url.path) {
+                        ZStack {
+                            Color.white
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFit()
+                                .padding()
+                        }
+                    } else {
+                        ContentUnavailableView("Preview Unavailable", systemImage: "photo")
                     }
                 }
-            }
-        }
-        .sheet(isPresented: $showingDXFPreview) {
-            if let dxfURL, let plan {
-                ExportPreviewSheet(title: "CAD File (DXF)", url: dxfURL) {
+            case .dxf(let url):
+                ExportPreviewSheet(title: "CAD File (DXF)", url: url) {
                     VStack(spacing: 12) {
-                        FloorPlanCanvas(plan: plan,
-                                        useImperial: useImperial,
-                                        markers: ScanStore.loadMarkers(for: project)?.markers ?? [],
-                                        layers: PlanLayers(),
-                                        exportBackground: true)
-                            .padding()
-                            .background(Color.white)
+                        if let plan {
+                            FloorPlanCanvas(plan: plan,
+                                            useImperial: useImperial,
+                                            markers: ScanStore.loadMarkers(for: project)?.markers ?? [],
+                                            layers: PlanLayers(),
+                                            exportBackground: true)
+                                .padding()
+                                .background(Color.white)
+                        }
                         Text("This is the geometry the CAD file contains. Walls, doors, windows, fixtures, dimensions, and labels export on separate layers (DXF R12, millimetres).")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -555,11 +555,8 @@ struct ProjectDetailView: View {
                     }
                     .padding(.vertical)
                 }
-            }
-        }
-        .sheet(isPresented: $showingBackupPreview) {
-            if let backupURL {
-                ExportPreviewSheet(title: "Project Backup", url: backupURL) {
+            case .backup(let url):
+                ExportPreviewSheet(title: "Project Backup", url: url) {
                     VStack(spacing: 14) {
                         Image(systemName: "externaldrive.badge.timemachine")
                             .font(.system(size: 44))
@@ -569,7 +566,7 @@ struct ProjectDetailView: View {
                             .font(.headline)
                         VStack(spacing: 4) {
                             Text("Everything in this project: rooms, floor plan, estimate, planning, compliance inputs, markers, and \(project.photoFileNames.count) photo\(project.photoFileNames.count == 1 ? "" : "s").")
-                            Text("Save it to Files or iCloud Drive, or AirDrop it to another device — import from the dashboard's ⋯ menu.")
+                            Text("Save it to Files or iCloud Drive, or AirDrop it to another device. Import from the dashboard's ⋯ menu.")
                         }
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -578,10 +575,7 @@ struct ProjectDetailView: View {
                     }
                     .padding()
                 }
-            }
-        }
-        .sheet(isPresented: $showingModelPreview) {
-            if let url = modelShareURL {
+            case .model(let url):
                 ExportPreviewSheet(title: "3D Model (USDZ)", url: url) {
                     if let scene = Model3DBuilder.viewerScene(for: project, useImperial: useImperial) {
                         Interactive3DView(scene: scene)
@@ -673,7 +667,7 @@ struct ProjectDetailView: View {
     private func convertManualPlan() {
         guard let manual = ScanStore.loadManualRoom(for: project),
               let converted = CornerRoom(manual: manual) else {
-            exportError = "The manual measurements couldn't be converted — check the room's width and length."
+            exportError = "The manual measurements couldn't be converted. Check the room's width and length."
             return
         }
         var updated = rooms
@@ -843,11 +837,11 @@ struct ProjectDetailView: View {
 
     private func convertScanToRoom() {
         guard let captured = ScanStore.loadCapturedRoom(for: project) else {
-            exportError = "This scan's saved data couldn't be read — rescan the room and try again."
+            exportError = "This scan's saved data couldn't be read. Rescan the room and try again."
             return
         }
         guard let converted = ScanConverter.convert(captured) else {
-            exportError = "Couldn't build a clean outline from this scan — try rescanning with a slower walk-through."
+            exportError = "Couldn't build a clean outline from this scan. Try rescanning with a slower walk-through."
             return
         }
         do {
@@ -945,14 +939,17 @@ struct ProjectDetailView: View {
         case .permit:
             exportPermitPackage()
         case .image:
-            Task { @MainActor in exportPlanImage() }
+            exportPlanImage()
         case .dxf:
             exportDXF()
         case .model:
             // Resolve the file to share now, so it matches the previewed
             // scene (QA-032).
-            modelShareURL = sharableModelURL()
-            showingModelPreview = true
+            if let url = sharableModelURL() {
+                exportPreview = .model(url)
+            } else {
+                exportError = "There is no 3D model to share yet."
+            }
         case .backup:
             exportBackup()
         case .none:
@@ -995,8 +992,7 @@ struct ProjectDetailView: View {
             .appendingPathComponent("\(safeName) - Floor Plan.png")
         do {
             try data.write(to: url)
-            planImageURL = url
-            showingImagePreview = true
+            exportPreview = .image(url)
         } catch {
             exportError = "Could not save the floor plan image."
         }
@@ -1061,8 +1057,7 @@ struct ProjectDetailView: View {
             do {
                 let url = try ProjectBackup.export(bgProject)
                 await MainActor.run {
-                    backupURL = url
-                    showingBackupPreview = true
+                    exportPreview = .backup(url)
                     isBackingUp = false
                 }
             } catch {
@@ -1096,8 +1091,7 @@ struct ProjectDetailView: View {
         }
         do {
             try data.write(to: url, options: .atomic)
-            dxfURL = url
-            showingDXFPreview = true
+            exportPreview = .dxf(url)
         } catch {
             exportError = "Could not save the CAD file."
         }
@@ -1168,6 +1162,21 @@ struct ProjectDetailView: View {
 /// Builds the material takeoff in its own body so the calculation doesn't
 /// run on every ProjectDetailView body eval — only when navigated to
 /// (QA-025).
+/// A generated file waiting in its preview sheet. Identified by path so
+/// re-exporting the same file re-presents the sheet.
+private enum ExportPreview: Identifiable {
+    case image(URL), dxf(URL), backup(URL), model(URL)
+
+    var id: String {
+        switch self {
+        case .image(let url): "image:\(url.path)"
+        case .dxf(let url): "dxf:\(url.path)"
+        case .backup(let url): "backup:\(url.path)"
+        case .model(let url): "model:\(url.path)"
+        }
+    }
+}
+
 private struct TakeoffDestination: View {
     let rooms: [RoomEntry]
     let project: RenovationProject

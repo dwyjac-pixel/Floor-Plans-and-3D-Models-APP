@@ -93,7 +93,7 @@ enum DXFExporter {
 
         // MARK: Header
 
-        code(999, "Interior AI Reno Planner floor plan — millimetres, 1:1 model space")
+        code(999, "Interior AI Reno Planner floor plan: millimetres, 1:1 model space")
         code(0, "SECTION"); code(2, "HEADER")
         code(9, "$ACADVER"); code(1, "AC1009")
         code(9, "$INSUNITS"); code(70, "4")   // millimetres

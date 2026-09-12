@@ -103,13 +103,13 @@ struct QuoteAdvisorScreen: View {
                         number: 1,
                         systemImage: "checklist",
                         title: "What it does for this job",
-                        detail: "Walks your scope and pricing line by line — flags what to cut or add to make the flip pencil out, catches items that usually need a permit, and points out where the budget's most likely to run over."
+                        detail: "Walks your scope and pricing line by line. It flags what to cut or add to make the flip pencil out, catches items that usually need a permit, and points out where the budget's most likely to run over."
                     )
                     onboardingStep(
                         number: 2,
                         systemImage: "lock.shield",
                         title: "Powered by Claude",
-                        detail: "It runs on Claude, so it needs a free Anthropic API key from platform.claude.com. Your key is stored securely on this device only — never uploaded, never shared."
+                        detail: "It runs on Claude, so it needs a free Anthropic API key from platform.claude.com. Your key is stored securely on this device only. It is never uploaded or shared."
                     )
                     onboardingStep(
                         number: 3,
@@ -241,7 +241,7 @@ struct QuoteAdvisorScreen: View {
 
     private var starterView: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Ask about this project's quote — the advisor can see the rooms, the takeoff with your pricing, and the estimate.")
+            Text("Ask about this project's quote. The advisor can see the rooms, the takeoff with your pricing, and the estimate.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             ForEach(Self.starterQuestions, id: \.self) { question in

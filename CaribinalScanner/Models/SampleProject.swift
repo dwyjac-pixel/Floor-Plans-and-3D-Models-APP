@@ -31,7 +31,7 @@ enum SampleProject {
         }
 
         let project = RenovationProject(
-            name: "Sample — 24 Oak St (Basement Suite)",
+            name: "Sample: 24 Oak St (Basement Suite)",
             clientName: "Jordan Example",
             address: "24 Oak St, Calgary, AB",
             projectType: "Legal Secondary Suite"
@@ -55,6 +55,20 @@ enum SampleProject {
         }
 
         defaults.set(true, forKey: seededFlag)
+    }
+
+    /// Samples seeded before the dash was dropped from the name still carry
+    /// it; retitle them once so the list matches new installs.
+    @MainActor
+    static func retitleLegacySample(context: ModelContext) {
+        let legacyName = "Sample \u{2014} 24 Oak St (Basement Suite)"
+        let all = (try? context.fetch(FetchDescriptor<RenovationProject>())) ?? []
+        let stale = all.filter { $0.folderName == sampleFolderName && $0.name == legacyName }
+        guard !stale.isEmpty else { return }
+        for sample in stale {
+            sample.name = "Sample: 24 Oak St (Basement Suite)"
+        }
+        try? context.save()
     }
 
     /// Collapses duplicate samples after CloudKit merges. Every device runs

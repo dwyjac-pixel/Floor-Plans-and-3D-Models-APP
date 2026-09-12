@@ -90,6 +90,7 @@ struct CaribinalScannerApp: App {
             SyncHealth.shared.start()
         }
         SampleProject.dedupeSamples(context: container.mainContext)
+        SampleProject.retitleLegacySample(context: container.mainContext)
         CloudMaintenance.sweepTombstones(context: container.mainContext)
     }
 }

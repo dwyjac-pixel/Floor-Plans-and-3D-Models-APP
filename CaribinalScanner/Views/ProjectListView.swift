@@ -58,7 +58,7 @@ struct ProjectListView: View {
             .navigationTitle("Reno Planner")
             .safeAreaInset(edge: .top, spacing: 0) {
                 if storeMode == "memory" {
-                    Label("Storage problem: running on temporary memory — changes will NOT be saved. Restart the app; if this persists, free up space or reinstall.",
+                    Label("Storage problem: running on temporary memory. Changes will NOT be saved. Restart the app; if this persists, free up space or reinstall.",
                           systemImage: "exclamationmark.triangle.fill")
                         .font(.footnote.weight(.medium))
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -67,7 +67,7 @@ struct ProjectListView: View {
                         .background(.red.opacity(0.15))
                         .foregroundStyle(.red)
                 } else if syncHealth.storageFull {
-                    Label("iCloud storage is full — changes are not syncing.",
+                    Label("iCloud storage is full. Changes are not syncing.",
                           systemImage: "exclamationmark.icloud.fill")
                         .font(.footnote.weight(.medium))
                         .frame(maxWidth: .infinity, alignment: .leading)

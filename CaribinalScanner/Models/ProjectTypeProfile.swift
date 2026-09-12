@@ -34,7 +34,7 @@ struct ProjectTypeProfile {
         case "Legal Secondary Suite":
             ProjectTypeProfile(
                 emphasis: .compliance, isSuiteProject: true,
-                aiGuidance: "This is a suite legalization: code compliance drives the scope — egress, ceiling height, separation, and permits come before cosmetic work.")
+                aiGuidance: "This is a suite legalization: code compliance drives the scope. Egress, ceiling height, separation, and permits come before cosmetic work.")
         case "Multi Family":
             ProjectTypeProfile(
                 emphasis: .investment, isSuiteProject: true,

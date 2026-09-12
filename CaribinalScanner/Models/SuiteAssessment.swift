@@ -36,7 +36,7 @@ enum SuiteAssessment {
                 notes.append("Ceiling height \(Measure.length(ceilingMeters, imperial: true)) is below the ~6' 6\" typically required for living space.")
             }
         } else {
-            notes.append("Ceiling height not recorded — needed to confirm suite viability.")
+            notes.append("Ceiling height not recorded. It is needed to confirm suite viability.")
         }
 
         func planned(_ title: String) -> Bool {
@@ -58,18 +58,18 @@ enum SuiteAssessment {
         let sqFtText = "\(Int(squareFeet.rounded())) sq ft"
         let headline: String
         if bedroomCapacity == 0 {
-            headline = "Small space (\(sqFtText)) — best suited to storage, utility, or partial development."
+            headline = "Small space (\(sqFtText)): best suited to storage, utility, or partial development."
         } else if missing.isEmpty && ceilingOK {
-            headline = "Rental-ready legal suite potential — up to \(bedroomCapacity)-bedroom (\(sqFtText))."
+            headline = "Rental-ready legal suite potential: up to \(bedroomCapacity)-bedroom (\(sqFtText))."
         } else if missing.count >= 4 {
-            headline = "Family-use basement development — up to \(bedroomCapacity)-bedroom (\(sqFtText))."
+            headline = "Family-use basement development: up to \(bedroomCapacity)-bedroom (\(sqFtText))."
         } else {
-            headline = "Suite potential — up to \(bedroomCapacity)-bedroom (\(sqFtText)), items outstanding."
+            headline = "Suite potential: up to \(bedroomCapacity)-bedroom (\(sqFtText)), items outstanding."
         }
         if !missing.isEmpty && bedroomCapacity > 0 {
             notes.append("Needed for a rental-ready legal suite: \(missing.joined(separator: ", ")).")
         }
-        notes.append("Guidance only — verify against local zoning and building code.")
+        notes.append("Guidance only. Verify against local zoning and building code.")
         return Result(headline: headline, notes: notes)
     }
 }
