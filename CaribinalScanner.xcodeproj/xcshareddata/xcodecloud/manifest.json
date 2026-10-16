@@ -1,0 +1,9 @@
+{
+  "id" : "e4fc8a14-df2c-4abe-8f07-b3101cbfb47e",
+  "targets" : [
+    {
+      "id" : "f76e61f2-5f5c-41bb-a542-b14ed331e736",
+      "name" : "CaribinalScanner"
+    }
+  ]
+}
