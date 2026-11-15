@@ -122,6 +122,7 @@ enum SampleProject {
         room.widthMeters = 6.1
         room.lengthMeters = 4.3
         room.ceilingHeightMeters = 2.05
+        room.ceilingMeasuredOnSite = false
         room.features = [
             ManualRoom.Feature(kind: .door, wallIndex: 3, offsetMeters: 1.5, widthMeters: 0.9),
             ManualRoom.Feature(kind: .window, wallIndex: 0, offsetMeters: 2.4, widthMeters: 1.2)

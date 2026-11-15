@@ -37,6 +37,11 @@ struct ManualRoomEntryScreen: View {
                 DimensionRow(label: "Width", meters: $room.widthMeters, imperial: useImperial)
                 DimensionRow(label: "Length", meters: $room.lengthMeters, imperial: useImperial)
                 DimensionRow(label: "Ceiling height", meters: $room.ceilingHeightMeters, imperial: useImperial)
+                Toggle("Ceiling measured on site", isOn: Binding(
+                    get: { room.ceilingMeasuredOnSite == true },
+                    set: { room.ceilingMeasuredOnSite = $0 }
+                ))
+                .disabled(room.ceilingHeightMeters <= 0.5)
             } header: {
                 Text("Room Size")
             } footer: {
@@ -313,6 +318,7 @@ struct DimensionRow: View {
     let label: String
     @Binding var meters: Double
     let imperial: Bool
+    var preciseHeight = false
 
     var body: some View {
         HStack {
@@ -327,16 +333,23 @@ struct DimensionRow: View {
                 Text("ft")
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
-                TextField("0", value: inchesBinding, format: .number)
-                    .keyboardType(.numberPad)
-                    .multilineTextAlignment(.trailing)
-                    .frame(width: 44)
-                    .accessibilityLabel("\(label), inches")
+                Group {
+                    if preciseHeight {
+                        TextField("0", value: fractionalInchesBinding, format: .number.precision(.fractionLength(0...2)))
+                            .keyboardType(.decimalPad)
+                    } else {
+                        TextField("0", value: inchesBinding, format: .number)
+                            .keyboardType(.numberPad)
+                    }
+                }
+                .multilineTextAlignment(.trailing)
+                .frame(width: preciseHeight ? 60 : 44)
+                .accessibilityLabel("\(label), inches")
                 Text("in")
                     .foregroundStyle(.secondary)
                     .accessibilityHidden(true)
             } else {
-                TextField("0.0", value: metersFieldBinding, format: .number.precision(.fractionLength(0...2)))
+                TextField("0.0", value: metersFieldBinding, format: .number.precision(.fractionLength(0...(preciseHeight ? 4 : 2))))
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.trailing)
                     .frame(width: 80)
@@ -354,9 +367,10 @@ struct DimensionRow: View {
 
     private var feetBinding: Binding<Int> {
         Binding(
-            get: { totalWholeInches / 12 },
+            get: { preciseHeight ? Measure.heightInFeetAndInches(meters).feet : totalWholeInches / 12 },
             set: { newFeet in
-                meters = Double(max(newFeet, 0) * 12 + totalWholeInches % 12) * 0.0254
+                let inches = preciseHeight ? Measure.heightInFeetAndInches(meters).inches : Double(totalWholeInches % 12)
+                meters = (Double(max(newFeet, 0)) * 12 + inches) * 0.0254
             }
         )
     }
@@ -366,6 +380,16 @@ struct DimensionRow: View {
             get: { totalWholeInches % 12 },
             set: { newInches in
                 meters = Double((totalWholeInches / 12) * 12 + min(max(newInches, 0), 11)) * 0.0254
+            }
+        )
+    }
+
+    private var fractionalInchesBinding: Binding<Double> {
+        Binding(
+            get: { Measure.heightInFeetAndInches(meters).inches },
+            set: { inches in
+                let feet = Measure.heightInFeetAndInches(meters).feet
+                meters = (Double(feet) * 12 + min(max(inches, 0), 11.99)) * 0.0254
             }
         )
     }

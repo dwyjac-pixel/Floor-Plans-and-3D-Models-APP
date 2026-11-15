@@ -48,7 +48,7 @@ final class ScanSessionController: NSObject, ObservableObject, RoomCaptureViewDe
         return capturedRooms
     }
 
-    let captureView: RoomCaptureView
+    @Published private(set) var captureView: RoomCaptureView
 
     override init() {
         ScanDebugLog.log("controller.init: creating RoomCaptureView")
@@ -79,6 +79,19 @@ final class ScanSessionController: NSObject, ObservableObject, RoomCaptureViewDe
         ScanDebugLog.log("start(): calling session.run")
         captureView.captureSession.run(configuration: configuration)
         ScanDebugLog.log("start(): session.run returned")
+    }
+
+    func restartAfterTrackingFailure() {
+        // A new AR session has a new origin. Keep earlier rooms in their
+        // original walk and offer to save them instead of mixing coordinates.
+        guard capturedRooms.isEmpty else { return }
+        captureView.delegate = nil
+        captureView.captureSession.delegate = nil
+        captureView.captureSession.stop()
+        let freshView = RoomCaptureView(frame: .zero)
+        freshView.delegate = self
+        freshView.captureSession.delegate = self
+        captureView = freshView
     }
 
     func finish() {
@@ -137,7 +150,7 @@ final class ScanSessionController: NSObject, ObservableObject, RoomCaptureViewDe
     static func friendlyMessage(for error: Error) -> String {
         let raw = error.localizedDescription
         if raw.localizedCaseInsensitiveContains("world tracking") {
-            return "The camera lost tracking, so this scan can't be used. This usually happens when you switch apps (like taking a photo) or cover the camera mid-scan. Stay in the app for the whole scan, then tap Rescan."
+            return "The camera lost tracking. Start in a well-lit area facing a corner where the floor and walls meet. Move slowly and keep the rear camera uncovered. Stay in Scanner until the scan finishes."
         }
         return raw
     }

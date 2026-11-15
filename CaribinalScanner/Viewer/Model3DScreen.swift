@@ -7,6 +7,8 @@ import SceneKit
 /// load directly.
 struct Model3DScreen: View {
     let project: RenovationProject
+    var snapshotRooms: [RoomEntry]? = nil
+    var title = "3D Model"
 
     @Environment(\.dismiss) private var dismiss
     @AppStorage("useImperialUnits") private var useImperial = true
@@ -38,7 +40,7 @@ struct Model3DScreen: View {
                     )
                 }
             }
-            .navigationTitle("3D Model")
+            .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -62,6 +64,9 @@ struct Model3DScreen: View {
     }
 
     private func loadPlanSummary() -> FloorPlanModel? {
+        if let snapshotRooms {
+            return FloorPlanModel(rooms: snapshotRooms.map(\.room))
+        }
         if let room = ScanStore.loadCapturedRoom(for: project) {
             return FloorPlanModel(room: room)
         }
@@ -99,6 +104,10 @@ struct Model3DScreen: View {
     }
 
     private func makeScene() -> SCNScene? {
-        Model3DBuilder.viewerScene(for: project, useImperial: useImperial)
+        if let snapshotRooms {
+            return Model3DBuilder.makeScene(rooms: snapshotRooms.map(\.room),
+                                            useImperial: useImperial, withLabels: true)
+        }
+        return Model3DBuilder.viewerScene(for: project, useImperial: useImperial)
     }
 }

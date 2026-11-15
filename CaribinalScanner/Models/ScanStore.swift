@@ -15,6 +15,7 @@ enum ScanStore {
     static let manualRoomFileName = "manual_room.json"
     static let cornerRoomFileName = "corner_room.json"
     static let roomsFileName = "rooms.json"
+    static let planHistoryFileName = "plan_history.json"
     static let estimateFileName = "estimate.json"
     static let takeoffAdjustmentsFileName = "takeoff_adjustments.json"
     static let aiChatFileName = "ai_chat.json"
@@ -418,10 +419,15 @@ enum ScanStore {
         var floorName: String
         var capturedAt: Date
         var rooms: [CapturedRoom]
+        var review: ScanWalkReview?
     }
 
-    static func loadScanWalks(for project: RenovationProject) -> [ScanWalk] {
-        decodeFile([ScanWalk].self, named: scanWalksFileName, for: project) ?? []
+    static func scanWalksURL(for project: RenovationProject) -> URL? {
+        existingFile(named: scanWalksFileName, for: project)
+    }
+
+    static func latestScanReview(at url: URL) throws -> ScanWalkReview? {
+        try JSONDecoder().decode([ScanWalk].self, from: Data(contentsOf: url)).last?.review
     }
 
     /// Saves a finished walk: raw room data first (recoverable no matter
@@ -429,37 +435,33 @@ enum ScanStore {
     /// batch translated as one unit so the walk's true layout survives —
     /// and finally the whole walk merged into one dollhouse USDZ.
     ///
-    /// QA-012 pattern: the caller resolves the directory and loads the
-    /// existing rooms/walks on the main actor; this function does pure URL
-    /// I/O and never touches a SwiftData model, so it is safe detached.
-    /// Returns how many rooms were added and how many failed conversion.
-    static func saveScanWalk(rooms captured: [CapturedRoom], floorName: String,
-                             existingRooms: [RoomEntry], existingWalks: [ScanWalk],
-                             directory dir: URL) async throws -> (added: Int, failed: Int) {
-        var walks = existingWalks
-        walks.append(ScanWalk(floorName: floorName, capturedAt: .now, rooms: captured))
-        try coordinatedWrite(JSONEncoder().encode(walks),
-                             to: dir.appendingPathComponent(scanWalksFileName))
-
-        var converted: [CornerRoom] = []
-        var failed = 0
-        for room in captured {
-            if let cornerRoom = ScanConverter.convert(room) {
-                converted.append(cornerRoom)
-            } else {
-                failed += 1
+    /// The caller resolves the project directory before dispatching this work.
+    static func saveScanWalk(id: UUID, rooms captured: [CapturedRoom], floorName: String,
+                             interruptedRoom: Bool,
+                             directory dir: URL) async throws -> (review: ScanWalkReview, rooms: [RoomEntry]) {
+        let walksURL = dir.appendingPathComponent(scanWalksFileName)
+        let roomsURL = dir.appendingPathComponent(roomsFileName)
+        let existingWalks = try readScanFile([ScanWalk].self, at: walksURL) ?? []
+        let existingRooms = try readEditableRooms(in: dir)
+        let converted = captured.map(ScanConverter.convert)
+        let review: ScanWalkReview
+        if let saved = existingWalks.first(where: { $0.review?.id == id })?.review {
+            review = saved
+        } else {
+            var items = converted.map { ScanWalkReview.Item(roomID: $0 == nil ? nil : UUID()) }
+            if interruptedRoom {
+                items.append(ScanWalkReview.Item(roomID: nil, interrupted: true))
             }
+            review = ScanWalkReview(id: id, floorName: floorName, items: items)
+            let walks = existingWalks + [ScanWalk(floorName: floorName, capturedAt: .now,
+                                                  rooms: captured, review: review)]
+            try coordinatedWrite(JSONEncoder().encode(walks), to: walksURL)
         }
-        var all = existingRooms
-        let placed = RoomsFile.placeGroup(converted, alongside: existingRooms)
-        let base = existingRooms.count
-        for (index, room) in placed.enumerated() {
-            all.append(RoomEntry(name: "Scanned Room \(base + index + 1)",
-                                 room: room, floorName: floorName))
-        }
-        if !placed.isEmpty {
-            try coordinatedWrite(JSONEncoder().encode(RoomsFile(rooms: all)),
-                                 to: dir.appendingPathComponent(roomsFileName))
+
+        let additions = review.additions(converted: converted, alongside: existingRooms)
+        let all = existingRooms + additions
+        if !additions.isEmpty {
+            try coordinatedWrite(JSONEncoder().encode(RoomsFile(rooms: all)), to: roomsURL)
         }
 
         // Merged walk USDZ via StructureBuilder — a nice-to-have whose
@@ -480,7 +482,34 @@ enum ScanStore {
         } catch {
             try? FileManager.default.removeItem(at: temp)
         }
-        return (placed.count, failed)
+        return (review, all)
+    }
+
+    private static func readEditableRooms(in directory: URL) throws -> [RoomEntry] {
+        if let file = try readScanFile(RoomsFile.self, at: directory.appendingPathComponent(roomsFileName)) {
+            return file.rooms
+        }
+        if let legacy = try readScanFile(CornerRoom.self, at: directory.appendingPathComponent(cornerRoomFileName)) {
+            return [RoomEntry(name: "Room 1", room: legacy)]
+        }
+        return []
+    }
+
+    /// A failed read must never look like an empty project during a save.
+    private static func readScanFile<Value: Decodable>(_ type: Value.Type, at url: URL) throws -> Value? {
+        if isAwaitingDownload(url) {
+            requestDownload(of: url)
+            throw CocoaError(.fileReadUnknown, userInfo: [
+                NSLocalizedDescriptionKey: "Project files are still downloading. Wait for them to finish, then retry the save."
+            ])
+        }
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return nil
+        }
+        return try JSONDecoder().decode(type, from: data)
     }
 
     static func usdzURL(for project: RenovationProject) -> URL? {
@@ -524,6 +553,11 @@ enum ScanStore {
         return []
     }
 
+    static func roomsForMeasurementReview(_ rooms: [RoomEntry], manual: ManualRoom?) -> [RoomEntry] {
+        guard rooms.isEmpty, let manual, let room = CornerRoom(manual: manual) else { return rooms }
+        return [RoomEntry(name: "Manual room", room: room)]
+    }
+
     static func saveRooms(_ rooms: [RoomEntry], for project: RenovationProject) throws {
         try write(JSONEncoder().encode(RoomsFile(rooms: rooms)), named: roomsFileName, for: project)
     }
@@ -531,6 +565,65 @@ enum ScanStore {
     /// Legacy pre-multi-room file — read only, for migration into rooms.json.
     static func loadCornerRoom(for project: RenovationProject) -> CornerRoom? {
         decodeFile(CornerRoom.self, named: cornerRoomFileName, for: project)
+    }
+
+    // MARK: - Existing conditions and proposed revisions
+
+    static func loadPlanHistory(for project: RenovationProject) throws -> PlanHistory? {
+        guard let directory = existingFolder(for: project) else { return nil }
+        return try readScanFile(PlanHistory.self, at: directory.appendingPathComponent(planHistoryFileName))
+    }
+
+    static func savePlanSnapshot(for project: RenovationProject, revisionName: String?) throws -> PlanHistory {
+        let directory = try folder(for: project)
+        let historyURL = directory.appendingPathComponent(planHistoryFileName)
+        if isAwaitingDownload(historyURL) {
+            requestDownload(of: historyURL)
+            throw PlanSnapshotError.downloading
+        }
+        // Read the current geometry from disk so changes made in the editor
+        // immediately before saving appear in the snapshot.
+        let rooms = try readEditableRooms(in: directory)
+        guard !rooms.isEmpty else { throw PlanSnapshotError.noRooms }
+        let markers = try readScanFile(PlanMarkers.self, at: directory.appendingPathComponent(markersFileName))
+            ?? PlanMarkers()
+
+        var coordinationError: NSError?
+        var result: Result<PlanHistory, Error>?
+        NSFileCoordinator(filePresenter: nil)
+            .coordinate(writingItemAt: historyURL, options: .forReplacing, error: &coordinationError) { url in
+                result = Result {
+                    let current = try readScanFile(PlanHistory.self, at: url)
+                    let history: PlanHistory
+                    if let revisionName {
+                        guard var current else { throw PlanSnapshotError.missingExistingConditions }
+                        current.saveRevision(named: revisionName, rooms: rooms, markers: markers)
+                        history = current
+                    } else {
+                        guard current == nil else { throw PlanSnapshotError.existingConditionsAlreadySaved }
+                        history = PlanHistory(existingConditions: .init(
+                            title: "Existing Conditions", rooms: rooms, markers: markers))
+                    }
+                    try JSONEncoder().encode(history).write(to: url, options: .atomic)
+                    return history
+                }
+            }
+        if let coordinationError { throw coordinationError }
+        guard let result else { throw CocoaError(.fileWriteUnknown) }
+        return try result.get()
+    }
+
+    private enum PlanSnapshotError: LocalizedError {
+        case noRooms, downloading, missingExistingConditions, existingConditionsAlreadySaved
+
+        var errorDescription: String? {
+            switch self {
+            case .noRooms: "Add or convert an editable room before saving a plan snapshot."
+            case .downloading: "Plan history is still downloading. Wait for it to finish, then try again."
+            case .missingExistingConditions: "Save existing conditions before saving a proposed revision."
+            case .existingConditionsAlreadySaved: "Existing conditions are already saved."
+            }
+        }
     }
 
     // MARK: - Estimate & planning

@@ -117,23 +117,28 @@ struct MaterialTakeoff {
         lines.append(Line(category: "Framing", item: "2×4 plate stock",
                           quantity: "\(plateFt) lin ft", note: "bottom + double top plate"))
 
+        let heightNote = rooms.contains { $0.fieldMeasuredCeilingMeters == nil }
+            ? "; verify ceiling heights" : ""
+        let outlineNote = rooms.contains { $0.outlineNeedsVerification == true }
+            ? "; verify approximate outlines" : ""
+
         // DRYWALL — wall both faces for interior, one face outline + ceiling
         let wallSheetArea = (outlineWallAreaM2 + interiorWallAreaM2) * 10.7639
         let ceilingSheets = areaFt2 / 32
         let wallSheets = wallSheetArea / 32
         lines.append(Line(category: "Drywall", item: "1/2\" drywall 4×8 sheets",
                           quantity: "\(Int((wallSheets + ceilingSheets) * waste))",
-                          note: "walls + ceiling, 10% waste"))
+                          note: "walls + ceiling, 10% waste\(heightNote)\(outlineNote)"))
         lines.append(Line(category: "Drywall", item: "Insulation (exterior walls)",
-                          quantity: "\(Int(exteriorWallAreaM2 * 10.7639)) sq ft", note: "R-value per code"))
+                          quantity: "\(Int(exteriorWallAreaM2 * 10.7639)) sq ft", note: "R-value per code\(heightNote)\(outlineNote)"))
 
         // FLOORING
         lines.append(Line(category: "Flooring", item: "Subfloor / underlay",
-                          quantity: "\(Int(areaFt2 * waste)) sq ft", note: "10% waste"))
+                          quantity: "\(Int(areaFt2 * waste)) sq ft", note: "10% waste\(outlineNote)"))
         lines.append(Line(category: "Flooring", item: "Finish flooring",
-                          quantity: "\(Int(areaFt2 * waste)) sq ft", note: "type per estimate"))
+                          quantity: "\(Int(areaFt2 * waste)) sq ft", note: "type per estimate\(outlineNote)"))
         lines.append(Line(category: "Flooring", item: "Baseboard",
-                          quantity: "\(Int(baseboardFt * waste)) lin ft", note: "both faces of partitions"))
+                          quantity: "\(Int(baseboardFt * waste)) lin ft", note: "both faces of partitions\(outlineNote)"))
 
         // OPENINGS
         if doors > 0 {
