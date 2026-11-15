@@ -9,6 +9,11 @@ enum SuiteAssessment {
         let notes: [String]
     }
 
+    static func verifiedCeiling(in rooms: [RoomEntry]) -> Double? {
+        let heights = rooms.compactMap { $0.room.fieldMeasuredCeilingMeters }
+        return heights.count == rooms.count ? heights.min() : nil
+    }
+
     static func evaluate(areaSquareMeters: Double?,
                          ceilingMeters: Double?,
                          planning: PlanningChecklist?,
@@ -29,14 +34,14 @@ enum SuiteAssessment {
         }
 
         var notes: [String] = []
-        var ceilingOK = true
+        var ceilingOK = ceilingMeters != nil
         if let ceilingMeters {
             if ceilingMeters < 1.95 {
                 ceilingOK = false
                 notes.append("Ceiling height \(Measure.length(ceilingMeters, imperial: true)) is below the ~6' 6\" typically required for living space.")
             }
         } else {
-            notes.append("Ceiling height not recorded. It is needed to confirm suite viability.")
+            notes.append("Verify each room’s ceiling height on site to assess suite viability.")
         }
 
         func planned(_ title: String) -> Bool {

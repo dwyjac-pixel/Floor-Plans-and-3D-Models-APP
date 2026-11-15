@@ -63,19 +63,26 @@ struct SuiteCompliance {
 
         // MARK: Measured — ceiling height (worst room governs)
 
-        let ceilings = rooms.map(\.room.ceilingHeightMeters).filter { $0 > 0.5 }
-        if let lowest = ceilings.min() {
+        let ceilings = rooms.compactMap { $0.room.fieldMeasuredCeilingMeters }
+        let unverifiedCount = rooms.count - ceilings.count
+        if let lowest = ceilings.min(), lowest < preset.minCeilingMeters || unverifiedCount == 0 {
+            let remaining = unverifiedCount > 0
+                ? " Rooms still needing a site measurement: \(unverifiedCount)."
+                : ""
             checks.append(Check(
                 title: "Ceiling height",
                 status: lowest >= preset.minCeilingMeters ? .pass : .fail,
-                detail: "Lowest recorded ceiling is \(Measure.length(lowest, imperial: true)); a secondary suite needs \(Measure.length(preset.minCeilingMeters, imperial: true)) over required areas.",
+                detail: "Lowest ceiling measured on site is \(Measure.length(lowest, imperial: true)); a secondary suite needs \(Measure.length(preset.minCeilingMeters, imperial: true)) over required areas.\(remaining)",
                 reference: "NBC 9.5.3: suite ceiling heights",
                 measured: true))
-        } else if !rooms.isEmpty {
+        } else if !rooms.isEmpty || planAreaSquareMeters != nil {
+            let detail = rooms.isEmpty
+                ? "Ceiling height needs a site measurement. Add an editable room to record it."
+                : "Rooms needing a site measurement: \(unverifiedCount). Check the height on site and confirm it in the room editor."
             checks.append(Check(
                 title: "Ceiling height",
-                status: .unknown,
-                detail: "No ceiling height recorded. Set it with Adjust Ceiling Height in the floor plan editor.",
+                status: .warning,
+                detail: detail,
                 reference: "NBC 9.5.3",
                 measured: true))
         }

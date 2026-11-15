@@ -30,7 +30,7 @@ struct ComplianceScreen: View {
             }
 
             if !compliance.measuredChecks.isEmpty {
-                Section("Measured from your plan") {
+                Section("Plan and site measurements") {
                     ForEach(compliance.measuredChecks) { check in
                         CheckRow(check: check)
                     }

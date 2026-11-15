@@ -13,6 +13,18 @@ enum Measure {
         return "\(feet)' \(inches)\""
     }
 
+    static func heightInFeetAndInches(_ meters: Double) -> (feet: Int, inches: Double) {
+        let totalInches = (meters / 0.0254 * 100).rounded() / 100
+        let feet = Int(totalInches / 12)
+        return (feet, totalInches - Double(feet) * 12)
+    }
+
+    static func height(_ meters: Double, imperial: Bool) -> String {
+        guard imperial else { return meters.formatted(.number.precision(.fractionLength(0...4))) + " m" }
+        let (feet, inches) = heightInFeetAndInches(meters)
+        return "\(feet)′ \(inches.formatted(.number.precision(.fractionLength(0...2))))″"
+    }
+
     static func area(_ squareMeters: Double, imperial: Bool) -> String {
         imperial
             ? String(format: "%.0f sq ft", squareMeters * 10.7639)

@@ -135,6 +135,8 @@ struct FloorPlanScreen: View {
     @State private var showingWallEdit = false
     @State private var showingCeilingEdit = false
     @State private var editCeiling: Double = 2.4
+    @State private var editBulkheadClearance = 0.0
+    @State private var editCeilingMeasuredOnSite = false
     @State private var editError: String?
 
     // Tape-measure accuracy check
@@ -148,9 +150,11 @@ struct FloorPlanScreen: View {
     @State private var editOverallDepth: Double = 0
 
     private let hasLiDARPlan: Bool
+    private let isProposedLayout: Bool
 
-    init(plan: FloorPlanModel, project: RenovationProject) {
+    init(plan: FloorPlanModel, project: RenovationProject, isProposedLayout: Bool = false) {
         self.project = project
+        self.isProposedLayout = isProposedLayout
         _plan = State(initialValue: plan)
         let hasRoomPlanScan = ScanStore.roomDataURL(for: project) != nil
         self.hasLiDARPlan = hasRoomPlanScan
@@ -363,7 +367,7 @@ struct FloorPlanScreen: View {
 
     private var layerChrome: some View {
         mainStack
-        .navigationTitle(viewMode == .plan ? "Floor Plan" : "3D Model")
+        .navigationTitle(isProposedLayout ? "Proposed Layout" : (viewMode == .plan ? "Floor Plan" : "3D Model"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbarContent }
         .onChange(of: editVersion) { _, _ in refreshPaneScene() }
@@ -1464,9 +1468,11 @@ struct FloorPlanScreen: View {
                 if cornerRoom != nil {
                     Button {
                         editCeiling = cornerRoom?.ceilingHeightMeters ?? 2.4
+                        editBulkheadClearance = cornerRoom?.bulkheadClearanceMeters ?? 0
+                        editCeilingMeasuredOnSite = cornerRoom?.fieldMeasuredCeilingMeters != nil
                         showingCeilingEdit = true
                     } label: {
-                        Label("Adjust Ceiling Height", systemImage: "arrow.up.and.down")
+                        Label("Ceiling & Bulkhead Heights", systemImage: "arrow.up.and.down")
                     }
                     Button {
                         if let bounds = cornerRoom?.planBounds {
@@ -1528,12 +1534,22 @@ struct FloorPlanScreen: View {
         NavigationStack {
             Form {
                 Section {
-                    DimensionRow(label: "Ceiling height", meters: $editCeiling, imperial: useImperial)
+                    DimensionRow(label: "Main ceiling", meters: $editCeiling, imperial: useImperial, preciseHeight: true)
+                    Toggle("Ceiling measured on site", isOn: $editCeilingMeasuredOnSite)
+                        .disabled(editCeiling <= 0.5)
                 } footer: {
-                    Text("Updates the 3D model, summary, and suite assessment.")
+                    Text("Confirm the height after checking it on site. The 3D model can use an estimate.")
+                    if let cornerRoom, cornerRoom.ceilingHeightMeters > 0 {
+                        Text(cornerRoom.ceilingHeightSourceLabel)
+                    }
+                }
+                Section {
+                    DimensionRow(label: "Bulkhead clearance", meters: $editBulkheadClearance, imperial: useImperial, preciseHeight: true)
+                } footer: {
+                    Text("Measure from the floor to the underside of the lowest bulkhead. Leave at zero if unmeasured.")
                 }
             }
-            .navigationTitle("Ceiling Height")
+            .navigationTitle("Ceiling & Bulkhead")
             .keyboardDoneButton()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -3096,7 +3112,15 @@ struct FloorPlanScreen: View {
             showingCeilingEdit = false
             return
         }
-        room.ceilingHeightMeters = max(editCeiling, 0)
+        let height = max(editCeiling, 0)
+        if editCeilingMeasuredOnSite && height > 0.5 {
+            room.ceilingHeightSource = .fieldMeasured
+        } else if room.ceilingHeightMeters != height || room.ceilingHeightSource == .fieldMeasured {
+            room.ceilingHeightSource = .assumed
+        }
+        room.ceilingHeightMeters = height
+        room.bulkheadClearanceMeters = editBulkheadClearance > 0 && editBulkheadClearance <= 100
+            ? editBulkheadClearance : nil
         persist(room)
         showingCeilingEdit = false
     }

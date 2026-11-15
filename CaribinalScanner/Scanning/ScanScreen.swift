@@ -12,7 +12,16 @@ struct ScanScreen: View {
     @StateObject private var controller = ScanSessionController()
     @State private var isSaving = false
     @State private var saveError: String?
-    @State private var dismissOnAlertClose = false
+    @State private var walkID = UUID()
+    private struct PendingWalk {
+        let floorName: String
+        let rooms: [CapturedRoom]
+        let interruptedRoom: Bool
+    }
+
+    @State private var pendingWalk: PendingWalk?
+    @State private var completedReview: ScanWalkReview?
+    @State private var savedRooms: [RoomEntry] = []
     @State private var showingFloorChoice = false
     @State private var showingCustomFloor = false
     @State private var customFloorName = ""
@@ -20,7 +29,9 @@ struct ScanScreen: View {
     var body: some View {
         ZStack {
             RoomCaptureViewRep(controller: controller)
+                .id(ObjectIdentifier(controller.captureView))
                 .ignoresSafeArea()
+                .onAppear { controller.start() }
 
             VStack {
                 HStack {
@@ -28,6 +39,7 @@ struct ScanScreen: View {
                         controller.cancel()
                         dismiss()
                     }
+                    .disabled(isSaving)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .background(.thinMaterial, in: Capsule())
@@ -42,11 +54,15 @@ struct ScanScreen: View {
             ScanDebugLog.log("ScanScreen.onAppear: begin")
             // Scanning is a long hands-busy task — never let the screen sleep.
             UIApplication.shared.isIdleTimerDisabled = true
-            controller.start()
             ScanDebugLog.log("ScanScreen.onAppear: end")
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
+        }
+        .sheet(item: $completedReview, onDismiss: { dismiss() }) { review in
+            NavigationStack {
+                ScanReviewScreen(review: review, rooms: savedRooms)
+            }
         }
         .alert("Scan Problem", isPresented: alertBinding) {
             Button("OK", role: .cancel) {}
@@ -81,6 +97,10 @@ struct ScanScreen: View {
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(isSaving ? "Saving" : "Processing scan")
+        } else if let pendingWalk {
+            Button("Retry Save") { save(floorName: pendingWalk.floorName) }
+                .buttonStyle(.borderedProminent)
+                .padding(.bottom, 8)
         } else if controller.didFinish {
             VStack(spacing: 10) {
                 if !controller.capturedRooms.isEmpty {
@@ -112,8 +132,13 @@ struct ScanScreen: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                Button("Rescan") { controller.start() }
-                    .buttonStyle(.borderedProminent)
+                if controller.capturedRooms.isEmpty {
+                    Button("Rescan") { controller.restartAfterTrackingFailure() }
+                        .buttonStyle(.borderedProminent)
+                } else {
+                    Button("Save Earlier Rooms") { showingFloorChoice = true }
+                        .buttonStyle(.borderedProminent)
+                }
             }
             .padding(.bottom, 8)
         } else {
@@ -131,10 +156,6 @@ struct ScanScreen: View {
                 if !presented {
                     saveError = nil
                     controller.errorMessage = nil
-                    if dismissOnAlertClose {
-                        dismissOnAlertClose = false
-                        dismiss()
-                    }
                 }
             }
         )
@@ -144,13 +165,16 @@ struct ScanScreen: View {
     /// editable rooms tagged with the chosen floor, and the merged walk
     /// USDZ. One room or ten — same path.
     private func save(floorName: String) {
-        let rooms = controller.walkRooms
-        guard !rooms.isEmpty else { return }
+        let interruptedRoom = controller.didFail
+        let walk = pendingWalk ?? PendingWalk(
+            floorName: floorName,
+            rooms: interruptedRoom ? controller.capturedRooms : controller.walkRooms,
+            interruptedRoom: interruptedRoom)
+        guard !walk.rooms.isEmpty, !isSaving else { return }
+        pendingWalk = walk
         isSaving = true
-        // QA-012: resolve the project's directory and load existing state
-        // here on the main actor; the detached task gets plain values and
-        // never reads the SwiftData @Model. The heavy conversion and USDZ
-        // work still runs off the main actor.
+        // Resolve the SwiftData project's directory on the main actor.
+        // The detached task works with file URLs and captured room values.
         let dir: URL
         do {
             dir = try ScanStore.folder(for: project)
@@ -159,35 +183,105 @@ struct ScanScreen: View {
             isSaving = false
             return
         }
-        let existingRooms = ScanStore.loadRooms(for: project)
-        let existingWalks = ScanStore.loadScanWalks(for: project)
+        let id = walkID
         Task.detached(priority: .userInitiated) {
             do {
-                let result = try await ScanStore.saveScanWalk(rooms: rooms,
-                                                              floorName: floorName,
-                                                              existingRooms: existingRooms,
-                                                              existingWalks: existingWalks,
+                let result = try await ScanStore.saveScanWalk(id: id, rooms: walk.rooms,
+                                                              floorName: walk.floorName,
+                                                              interruptedRoom: walk.interruptedRoom,
                                                               directory: dir)
                 await MainActor.run {
                     controller.cancel()
                     project.scanDate = .now
                     try? modelContext.save()
-                    if result.failed > 0 {
-                        isSaving = false
-                        dismissOnAlertClose = result.added > 0
-                        let added = result.added == 1 ? "1 room" : "\(result.added) rooms"
-                        saveError = result.added > 0
-                            ? "\(added) added to \(floorName). \(result.failed) couldn't build a clean outline. Rescan that one with a slower walk-through."
-                            : "This room couldn't build a clean outline. Try rescanning with a slower walk-through. The raw scan data was kept."
-                    } else {
-                        dismiss()
-                    }
+                    isSaving = false
+                    savedRooms = result.rooms
+                    completedReview = result.review
                 }
             } catch {
                 await MainActor.run {
                     saveError = error.localizedDescription
                     isSaving = false
                 }
+            }
+        }
+    }
+}
+
+
+struct ScanReviewScreen: View {
+    let review: ScanWalkReview
+    let rooms: [RoomEntry]
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            Section(review.floorName) {
+                ForEach(Array(review.items.enumerated()), id: \.offset) { index, item in
+                    VStack(alignment: .leading, spacing: 5) {
+                        let room = rooms.first { $0.id == item.roomID }
+                        Text(room?.name ?? "Room \(index + 1)").font(.headline)
+                        if let room {
+                            Label("Added to the floor plan", systemImage: "checkmark.circle")
+                            if room.room.outlineNeedsVerification == true {
+                                Label("Approximate outline. Check wall lengths and shape on site.",
+                                      systemImage: "exclamationmark.triangle")
+                            }
+                            if room.room.fieldMeasuredCeilingMeters == nil {
+                                Label("Measure ceiling height on site.", systemImage: "ruler")
+                            }
+                        } else if item.interrupted == true {
+                            Label("Capture interrupted. Scan this room again or enter measurements.",
+                                  systemImage: "exclamationmark.triangle")
+                        } else if item.roomID == nil {
+                            Label("No usable outline. Rescan this room or enter measurements.",
+                                  systemImage: "exclamationmark.triangle")
+                        } else {
+                            Label("This room is missing from the current floor plan.",
+                                  systemImage: "exclamationmark.triangle")
+                        }
+                    }
+                    .font(.subheadline)
+                }
+            }
+        }
+        .navigationTitle("Scan Review")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Done") { dismiss() }
+            }
+        }
+    }
+}
+
+struct LatestScanReviewScreen: View {
+    let url: URL
+    let rooms: [RoomEntry]
+
+    @State private var review: ScanWalkReview?
+    @State private var message: String?
+
+    var body: some View {
+        Group {
+            if let review {
+                ScanReviewScreen(review: review, rooms: rooms)
+            } else if let message {
+                ContentUnavailableView(message, systemImage: "list.clipboard")
+            } else {
+                ProgressView("Loading scan review…")
+            }
+        }
+        .task {
+            do {
+                let fileURL = url
+                review = try await Task.detached {
+                    try ScanStore.latestScanReview(at: fileURL)
+                }.value
+                if review == nil { message = "No review is available for this scan." }
+            } catch {
+                message = "Could not read the scan review."
             }
         }
     }

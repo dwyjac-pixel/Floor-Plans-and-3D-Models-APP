@@ -37,6 +37,7 @@ struct ManualRoom: Codable {
     var widthMeters: Double = 0
     var lengthMeters: Double = 0
     var ceilingHeightMeters: Double = 0
+    var ceilingMeasuredOnSite: Bool?
     var features: [Feature] = []
     var bumpOuts: [BumpOut] = []
 
@@ -44,7 +45,7 @@ struct ManualRoom: Codable {
 
     // Custom decoding so files saved before bump-outs existed still load.
     private enum CodingKeys: String, CodingKey {
-        case widthMeters, lengthMeters, ceilingHeightMeters, features, bumpOuts
+        case widthMeters, lengthMeters, ceilingHeightMeters, ceilingMeasuredOnSite, features, bumpOuts
     }
 
     init(from decoder: Decoder) throws {
@@ -52,6 +53,7 @@ struct ManualRoom: Codable {
         widthMeters = try container.decodeIfPresent(Double.self, forKey: .widthMeters) ?? 0
         lengthMeters = try container.decodeIfPresent(Double.self, forKey: .lengthMeters) ?? 0
         ceilingHeightMeters = try container.decodeIfPresent(Double.self, forKey: .ceilingHeightMeters) ?? 0
+        ceilingMeasuredOnSite = try container.decodeIfPresent(Bool.self, forKey: .ceilingMeasuredOnSite)
         features = try container.decodeIfPresent([Feature].self, forKey: .features) ?? []
         bumpOuts = try container.decodeIfPresent([BumpOut].self, forKey: .bumpOuts) ?? []
     }

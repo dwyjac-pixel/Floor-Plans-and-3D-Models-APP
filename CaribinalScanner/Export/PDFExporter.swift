@@ -284,13 +284,16 @@ enum PDFExporter {
                                          sectionRooms: ScanStore.loadRooms(for: project))
                 }
 
+                let complianceRooms = ScanStore.roomsForMeasurementReview(
+                    ScanStore.loadRooms(for: project), manual: ScanStore.loadManualRoom(for: project))
+
                 // MARK: Proposed development
 
                 if !plannedItems.isEmpty || plan != nil {
                     y = beginContentPage("Proposed Development")
                     let assessment = SuiteAssessment.evaluate(
                         areaSquareMeters: plan?.approxFloorAreaSquareMeters,
-                        ceilingMeters: plan?.ceilingHeightMeters,
+                        ceilingMeters: SuiteAssessment.verifiedCeiling(in: complianceRooms),
                         planning: planning,
                         estimate: estimate)
                     y = drawText(assessment.headline, font: .boldSystemFont(ofSize: 14), y: y)
@@ -312,7 +315,6 @@ enum PDFExporter {
 
                 // MARK: Suite compliance
 
-                let complianceRooms = ScanStore.loadRooms(for: project)
                 if plan != nil || !complianceRooms.isEmpty {
                     let compliance = SuiteCompliance.evaluate(
                         rooms: complianceRooms,
@@ -504,7 +506,8 @@ enum PDFExporter {
                                   layers: PlanLayers = PlanLayers()) -> URL? {
         guard let plan else { return nil }
         let profile = BusinessProfile.load()
-        let rooms = ScanStore.loadRooms(for: project)
+        let rooms = ScanStore.roomsForMeasurementReview(
+            ScanStore.loadRooms(for: project), manual: ScanStore.loadManualRoom(for: project))
         let reportMarkers = ScanStore.loadMarkers(for: project)?.markers ?? []
 
         let canvasSide: CGFloat = 640
@@ -711,9 +714,13 @@ enum PDFExporter {
                 for entry in measurementRooms {
                     if entry.room.ceilingHeightMeters > 0 {
                         permitRow("\(measurementName(entry)) ceiling height",
-                                  Measure.length(entry.room.ceilingHeightMeters, imperial: useImperial))
+                                  "\(Measure.height(entry.room.ceilingHeightMeters, imperial: useImperial)) · \(entry.room.ceilingHeightSourceLabel)")
                     } else {
                         permitRow("\(measurementName(entry)) ceiling height", "not recorded")
+                    }
+                    if let clearance = entry.room.bulkheadClearanceMeters {
+                        permitRow("\(measurementName(entry)) bulkhead clearance",
+                                  Measure.height(clearance, imperial: useImperial))
                     }
                 }
                 for entry in measurementRooms {

@@ -23,16 +23,18 @@ struct CaribinalScannerApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(AppSettings.appearanceKey) private var appearance = "system"
 
+    private static let localTestBuild = Bundle.main.bundleIdentifier == "com.caribinalcreations.scanner.staging"
+
     init() {
         ScanDebugLog.log("boot: app init entered")
         let schema = Schema([RenovationProject.self, DeletedProject.self])
         let cloud = ModelConfiguration(schema: schema,
-                                       cloudKitDatabase: .private(ScanStore.cloudContainerID))
+                                       cloudKitDatabase: Self.localTestBuild ? .none : .private(ScanStore.cloudContainerID))
         ScanDebugLog.log("boot: trying cloud ModelContainer")
         if let c = try? ModelContainer(for: schema, configurations: [cloud]) {
             ScanDebugLog.log("boot: cloud ModelContainer ready")
             container = c
-            storeMode = "cloud"
+            storeMode = Self.localTestBuild ? "local" : "cloud"
         } else if let c = try? ModelContainer(for: schema,
                                               configurations: [ModelConfiguration(schema: schema,
                                                                                   cloudKitDatabase: .none)]) {
@@ -61,7 +63,7 @@ struct CaribinalScannerApp: App {
                     ProgressView("Preparing your projects…")
                         .task {
                             ScanDebugLog.log("boot: bootstrap begin")
-                            await ScanStore.bootstrap()
+                            if !Self.localTestBuild { await ScanStore.bootstrap() }
                             ScanDebugLog.log("boot: bootstrap end")
                             storageReady = true
                         }
@@ -87,7 +89,7 @@ struct CaribinalScannerApp: App {
         if initial {
             SampleProject.seedIfNeeded(context: container.mainContext)
             SampleProject.ensureSampleGeometry(context: container.mainContext)
-            SyncHealth.shared.start()
+            if !Self.localTestBuild { SyncHealth.shared.start() }
         }
         SampleProject.dedupeSamples(context: container.mainContext)
         SampleProject.retitleLegacySample(context: container.mainContext)

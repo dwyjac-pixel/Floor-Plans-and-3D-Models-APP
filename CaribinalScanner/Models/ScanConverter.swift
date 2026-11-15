@@ -671,6 +671,7 @@ extension ScanConverter {
 
         var built: (outline: [SIMD2<Double>], interiors: [(SIMD2<Double>, SIMD2<Double>)])?
         var floorLevel: Double?
+        var outlineNeedsVerification = false
 
         // Gold path: the floor polygon is already the ordered outline; walls
         // that hug it are boundary duplicates, the rest become partitions.
@@ -685,6 +686,7 @@ extension ScanConverter {
             for relaxed in [false, true] {
                 if let outline = buildOutline(from: wallSegments, relaxed: relaxed) {
                     built = outline
+                    outlineNeedsVerification = relaxed
                     break
                 }
             }
@@ -694,17 +696,23 @@ extension ScanConverter {
         if built == nil, let floor = floorRing(captured, allowRectangle: true) {
             built = finishOutline(points: floor.ring, removableCorner: nil,
                                   interiorCandidates: wallPairs)
-            if built != nil { floorLevel = floor.floorY }
+            if built != nil {
+                floorLevel = floor.floorY
+                outlineNeedsVerification = true
+            }
         }
         guard let result = built else { return nil }
 
         // Median wall height, not max: one wall running up an open stairwell
         // would otherwise set the whole room's ceiling (and window sill caps).
-        let wallHeights = captured.walls.map { Double($0.dimensions.y) }.sorted()
+        let wallHeights = captured.walls.map { Double($0.dimensions.y) }
+            .filter { $0.isFinite && $0 > 0.5 }.sorted()
         let ceiling = wallHeights.isEmpty ? 2.4 : wallHeights[wallHeights.count / 2]
         var room = CornerRoom(
             corners: result.outline.map { CornerRoom.Point(x: $0.x, z: $0.y) },
-            ceilingHeightMeters: ceiling)
+            ceilingHeightMeters: ceiling,
+            ceilingHeightSource: wallHeights.isEmpty ? .assumed : .captured)
+        room.outlineNeedsVerification = outlineNeedsVerification
         room.interiorWalls = result.interiors.map {
             CornerRoom.InteriorWall(start: CornerRoom.Point(x: $0.0.x, z: $0.0.y),
                                     end: CornerRoom.Point(x: $0.1.x, z: $0.1.y))

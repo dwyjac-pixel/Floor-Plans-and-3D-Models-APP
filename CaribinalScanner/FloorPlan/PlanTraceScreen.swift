@@ -39,6 +39,7 @@ struct PlanTraceScreen: View {
     @State private var isImportingFile = false
     @State private var importError: String?
     @State private var showingFinishSheet = false
+    @State private var ceilingMeasuredOnSite = false
     @State private var ceilingMeters: Double = AppSettings.defaultCeilingMeters
     @State private var squareUpWalls = true
     @State private var saveError: String?
@@ -430,6 +431,8 @@ struct PlanTraceScreen: View {
             Form {
                 Section {
                     DimensionRow(label: "Ceiling height", meters: $ceilingMeters, imperial: useImperial)
+                    Toggle("Ceiling measured on site", isOn: $ceilingMeasuredOnSite)
+                        .disabled(ceilingMeters <= 0.5)
                     Toggle("Square up walls", isOn: $squareUpWalls)
                     LabeledContent("Corners traced", value: "\(corners.count)")
                 }
@@ -572,7 +575,8 @@ struct PlanTraceScreen: View {
         if squareUpWalls {
             points = RoomSquarer.squared(points)
         }
-        let traced = CornerRoom(corners: points, ceilingHeightMeters: ceilingMeters)
+        let traced = CornerRoom(corners: points, ceilingHeightMeters: ceilingMeters,
+                                 ceilingHeightSource: ceilingMeasuredOnSite && ceilingMeters > 0.5 ? .fieldMeasured : .assumed)
         // A bow-tie / figure-8 outline under-reports its floor area; warn
         // before saving unless the user has confirmed.
         if !force, traced.isSelfIntersecting {

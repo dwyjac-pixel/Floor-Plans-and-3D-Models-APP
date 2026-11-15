@@ -19,6 +19,7 @@ struct CornerCaptureScreen: View {
     @State private var cameraDenied = false
     @State private var showingFinishSheet = false
     @State private var squareUpWalls = true
+    @State private var ceilingMeasuredOnSite = false
     @State private var ceilingMeters: Double
     @State private var isSaving = false
     @State private var saveError: String?
@@ -33,6 +34,7 @@ struct CornerCaptureScreen: View {
         if let targetRoomID,
            let room = ScanStore.loadRooms(for: project).first(where: { $0.id == targetRoomID })?.room {
             existingCeiling = room.ceilingHeightMeters
+            _ceilingMeasuredOnSite = State(initialValue: room.fieldMeasuredCeilingMeters != nil)
         }
         if existingCeiling <= 0 {
             existingCeiling = ScanStore.loadManualRoom(for: project)?.ceilingHeightMeters ?? 0
@@ -171,6 +173,8 @@ struct CornerCaptureScreen: View {
                 Form {
                     Section {
                         DimensionRow(label: "Ceiling height", meters: $ceilingMeters, imperial: useImperial)
+                        Toggle("Ceiling measured on site", isOn: $ceilingMeasuredOnSite)
+                            .disabled(ceilingMeters <= 0.5)
                     } footer: {
                         Text("Used for the 3D model, floor plan summary, and suite assessment.")
                     }
@@ -244,7 +248,8 @@ struct CornerCaptureScreen: View {
             isSaving = false
             return
         }
-        let captured = CornerRoom(corners: points, ceilingHeightMeters: ceilingMeters)
+        let captured = CornerRoom(corners: points, ceilingHeightMeters: ceilingMeters,
+                                 ceilingHeightSource: ceilingMeasuredOnSite && ceilingMeters > 0.5 ? .fieldMeasured : .assumed)
         guard captured.floorAreaSquareMeters >= ScanConverter.minRoomArea else {
             saveError = "This outline is too small to be a room. Mark the corners around the whole floor."
             isSaving = false

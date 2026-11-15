@@ -17,6 +17,10 @@ struct ProjectDetailView: View {
     @State private var showingCornerCapture = false
     @State private var showingPlanTrace = false
     @State private var rooms: [RoomEntry] = []
+    @State private var planHistory: PlanHistory?
+    @State private var confirmingExistingConditions = false
+    @State private var namingProposedRevision = false
+    @State private var proposedRevisionName = ""
     @State private var captureTargetID: UUID?
     @State private var renameTargetID: UUID?
     @State private var renameText = ""
@@ -44,6 +48,7 @@ struct ProjectDetailView: View {
     // (QA-025).
     @State private var cachedScanURL: URL?
     @State private var hasLiDARData = false
+    @State private var scanWalksURL: URL?
     @State private var downloadingFromCloud = false
     // The USDZ actually shared for the 3D model, resolved when the preview
     // is opened (QA-032).
@@ -177,14 +182,43 @@ struct ProjectDetailView: View {
         DashboardCard(title: "Plan & Rooms", systemImage: "map") {
             VStack(alignment: .leading, spacing: 10) {
                 if let plan {
-                    navRow(title: "Floor Plan", systemImage: "map",
+                    navRow(title: planHistory == nil ? "Floor Plan" : "Edit Proposed Layout", systemImage: "map",
                            detail: planSource) {
-                        FloorPlanScreen(plan: plan, project: project)
+                        FloorPlanScreen(plan: plan, project: project, isProposedLayout: planHistory != nil)
+                    }
+                }
+                if let planHistory {
+                    navRow(title: "Plan History", systemImage: "clock.arrow.circlepath") {
+                        PlanHistoryScreen(history: planHistory, project: project) { updated in
+                            self.planHistory = updated
+                        }
+                    }
+                    if let latest = planHistory.proposedRevisions.last {
+                        navRow(title: "Review Latest Revision", systemImage: "doc.text", detail: latest.title) {
+                            PlanSnapshotScreen(snapshot: latest, title: "Proposed · \(latest.title)", project: project,
+                                               existingConditionsID: planHistory.existingConditions.id)
+                        }
+                    }
+                    if !rooms.isEmpty, !hasLiDARData {
+                        buttonRow(title: "Save Proposed Revision", systemImage: "square.and.arrow.down") {
+                            proposedRevisionName = ""
+                            namingProposedRevision = true
+                        }
+                    }
+                } else if !rooms.isEmpty, !hasLiDARData {
+                    buttonRow(title: "Save Existing Conditions", systemImage: "square.and.arrow.down") {
+                        confirmingExistingConditions = true
                     }
                 }
                 if cachedScanURL != nil {
                     buttonRow(title: "View 3D Model", systemImage: "cube") {
                         showingModelViewer = true
+                    }
+                }
+
+                if let scanWalksURL {
+                    navRow(title: "Latest Scan Review", systemImage: "list.clipboard") {
+                        LatestScanReviewScreen(url: scanWalksURL, rooms: rooms)
                     }
                 }
 
@@ -298,7 +332,7 @@ struct ProjectDetailView: View {
                     navRow(title: "Suite Compliance", systemImage: "checkmark.shield") {
                         // Evaluation runs in the destination's own body rather
                         // than on every parent body eval (QA-025).
-                        ComplianceDestination(rooms: rooms,
+                        ComplianceDestination(rooms: measurementRooms,
                                               planAreaSquareMeters: plan?.approxFloorAreaSquareMeters,
                                               planning: planningChecklist,
                                               estimate: estimateInputs)
@@ -610,7 +644,7 @@ struct ProjectDetailView: View {
             NavigationStack {
                 PlanningScreen(project: project,
                                areaSquareMeters: plan?.approxFloorAreaSquareMeters,
-                               ceilingMeters: plan?.ceilingHeightMeters,
+                               ceilingMeters: SuiteAssessment.verifiedCeiling(in: measurementRooms),
                                estimate: estimateInputs,
                                onSave: reloadScan)
             }
@@ -644,6 +678,18 @@ struct ProjectDetailView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Photos, notes, estimate, and planning are kept. This can't be undone.")
+        }
+        .confirmationDialog("Save existing conditions?", isPresented: $confirmingExistingConditions,
+                            titleVisibility: .visible) {
+            Button("Save Existing Conditions") { savePlanSnapshot(revisionName: nil) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Check that this plan shows the property as it is today. The saved copy stays read-only. Future edits go into the proposed layout.")
+        }
+        .alert("Save Proposed Revision", isPresented: $namingProposedRevision) {
+            TextField("Revision name (optional)", text: $proposedRevisionName)
+            Button("Save") { savePlanSnapshot(revisionName: proposedRevisionName) }
+            Button("Cancel", role: .cancel) {}
         }
         .onAppear(perform: reloadScan)
         // While files are downloading from iCloud, re-check once a second
@@ -747,7 +793,14 @@ struct ProjectDetailView: View {
 
     private func roomRow(_ entry: RoomEntry) -> some View {
         HStack {
-            Label(entry.name, systemImage: "square.dashed")
+            VStack(alignment: .leading, spacing: 4) {
+                Label(entry.name, systemImage: "square.dashed")
+                if entry.room.outlineNeedsVerification == true {
+                    Text("Verify outline")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
             Spacer()
             Text(Measure.area(entry.room.floorAreaSquareMeters, imperial: useImperial))
                 .foregroundStyle(.secondary)
@@ -860,6 +913,16 @@ struct ProjectDetailView: View {
         }
     }
 
+    @State private var measurementRooms: [RoomEntry] = []
+
+    private func savePlanSnapshot(revisionName: String?) {
+        do {
+            planHistory = try ScanStore.savePlanSnapshot(for: project, revisionName: revisionName)
+        } catch {
+            exportError = error.localizedDescription
+        }
+    }
+
     private func reloadScan() {
         // Surface files that exist in iCloud but haven't landed here yet
         // (also kicks their download) — otherwise a syncing project renders
@@ -868,6 +931,8 @@ struct ProjectDetailView: View {
         let manual = ScanStore.loadManualRoom(for: project)
         hasManualRoom = manual != nil
         rooms = ScanStore.loadRooms(for: project)
+        planHistory = try? ScanStore.loadPlanHistory(for: project)
+        measurementRooms = ScanStore.roomsForMeasurementReview(rooms, manual: manual)
         estimateInputs = ScanStore.loadEstimate(for: project)
         planningChecklist = ScanStore.loadPlanning(for: project)
         if let room = ScanStore.loadCapturedRoom(for: project),
@@ -886,6 +951,7 @@ struct ProjectDetailView: View {
         }
         // Cache disk-backed lookups so body reads stay off the disk (QA-025).
         hasLiDARData = ScanStore.roomDataURL(for: project) != nil
+        scanWalksURL = ScanStore.scanWalksURL(for: project)
         cachedScanURL = ScanStore.lidarUSDZURL(for: project) ?? ScanStore.usdzURL(for: project)
         // Cache the quote grand total and "is anything priced" flag here too,
         // so the dashboard's Quote card and next-step prompt don't recompute
@@ -988,8 +1054,9 @@ struct ProjectDetailView: View {
         let safeName = project.name
             .replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
+        let label = planHistory == nil ? "Floor Plan" : "Proposed Layout"
         let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("\(safeName) - Floor Plan.png")
+            .appendingPathComponent("\(safeName) - \(label).png")
         do {
             try data.write(to: url)
             exportPreview = .image(url)

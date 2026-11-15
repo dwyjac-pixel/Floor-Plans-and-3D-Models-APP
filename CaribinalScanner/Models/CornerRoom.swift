@@ -239,7 +239,34 @@ struct CornerRoom: Codable {
     }
 
     var corners: [Point] = []
+    enum CeilingHeightSource: String, Codable {
+        case captured
+        case fieldMeasured
+        case assumed
+
+        var label: String {
+            switch self {
+            case .captured: "Scan estimate, verify on site"
+            case .fieldMeasured: "Measured on site"
+            case .assumed: "Assumed, verify on site"
+            }
+        }
+    }
+
     var ceilingHeightMeters: Double = 0
+    var ceilingHeightSource: CeilingHeightSource?
+    var bulkheadClearanceMeters: Double?
+    var outlineNeedsVerification: Bool?
+
+    var fieldMeasuredCeilingMeters: Double? {
+        guard ceilingHeightSource == .fieldMeasured,
+              ceilingHeightMeters.isFinite, ceilingHeightMeters > 0.5 else { return nil }
+        return ceilingHeightMeters
+    }
+
+    var ceilingHeightSourceLabel: String {
+        ceilingHeightSource?.label ?? "Source unknown, verify on site"
+    }
     var interiorWalls: [InteriorWall] = []
     var openings: [Opening] = []
     var fixtures: [Fixture] = []
@@ -256,21 +283,26 @@ struct CornerRoom: Codable {
 
     init() {}
 
-    init(corners: [Point], ceilingHeightMeters: Double) {
+    init(corners: [Point], ceilingHeightMeters: Double, ceilingHeightSource: CeilingHeightSource) {
         self.corners = corners
         self.ceilingHeightMeters = ceilingHeightMeters
+        self.ceilingHeightSource = ceilingHeightSource
     }
 
     // Custom decoding so files saved by earlier versions still load.
     private enum CodingKeys: String, CodingKey {
-        case corners, ceilingHeightMeters, interiorWalls, openings, fixtures,
+        case corners, ceilingHeightMeters, ceilingHeightSource, bulkheadClearanceMeters, outlineNeedsVerification, interiorWalls, openings, fixtures,
              verifiedAccuracyPercent, floorType, floorHex, outlineWallHex
     }
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         corners = try container.decodeIfPresent([Point].self, forKey: .corners) ?? []
+        bulkheadClearanceMeters = try container.decodeIfPresent(Double.self, forKey: .bulkheadClearanceMeters)
         ceilingHeightMeters = try container.decodeIfPresent(Double.self, forKey: .ceilingHeightMeters) ?? 0
+        ceilingHeightSource = (try? container.decodeIfPresent(String.self, forKey: .ceilingHeightSource))
+            .flatMap(CeilingHeightSource.init(rawValue:))
+        outlineNeedsVerification = try container.decodeIfPresent(Bool.self, forKey: .outlineNeedsVerification)
         // Element-tolerant: one unreadable interior wall / opening / fixture
         // is skipped rather than voiding the whole room.
         interiorWalls = (try container.decodeIfPresent([LossyDecodable<InteriorWall>].self, forKey: .interiorWalls) ?? []).compactMap { $0.value }

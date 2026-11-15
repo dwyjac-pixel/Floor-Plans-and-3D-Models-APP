@@ -13,6 +13,33 @@ struct RoomEntry: Codable, Identifiable {
     var floorName: String?
 }
 
+/// The outcome of each captured room, in the original walk order.
+struct ScanWalkReview: Codable, Identifiable {
+    struct Item: Codable {
+        var roomID: UUID?
+        var interrupted: Bool?
+    }
+
+    let id: UUID
+    let floorName: String
+    let items: [Item]
+
+    /// Reuse IDs on retry and preserve the positions of rooms from a
+    /// continuous walk. A failed conversion has no editable room ID.
+    func additions(converted: [CornerRoom?], alongside existing: [RoomEntry]) -> [RoomEntry] {
+        let existingIDs = Set(existing.map(\.id))
+        let pending = zip(items, converted).compactMap { item, room -> (UUID, CornerRoom)? in
+            guard let id = item.roomID, let room, !existingIDs.contains(id) else { return nil }
+            return (id, room)
+        }
+        let placed = RoomsFile.placeGroup(pending.map { $0.1 }, alongside: existing)
+        return zip(pending, placed).enumerated().map { index, pair in
+            RoomEntry(id: pair.0.0, name: "Scanned Room \(existing.count + index + 1)",
+                      room: pair.1, floorName: floorName)
+        }
+    }
+}
+
 extension RoomEntry {
     static let defaultFloorName = "Main Floor"
     var floorDisplayName: String { floorName ?? Self.defaultFloorName }
@@ -332,7 +359,12 @@ extension CornerRoom {
         guard points.count >= 3 else { return nil }
 
         self.init(corners: points,
-                  ceilingHeightMeters: manual.ceilingHeightMeters > 0 ? manual.ceilingHeightMeters : 2.4)
+                  ceilingHeightMeters: manual.ceilingHeightMeters > 0 ? manual.ceilingHeightMeters : 2.4,
+                  ceilingHeightSource: manual.ceilingHeightMeters > 0.5 && manual.ceilingMeasuredOnSite == true
+                    ? .fieldMeasured : .assumed)
+        if manual.ceilingHeightMeters > 0 && manual.ceilingMeasuredOnSite == nil {
+            ceilingHeightSource = nil
+        }
 
         func overlap(_ aFrom: Double, _ aTo: Double, _ bFrom: Double, _ bTo: Double) -> Double {
             max(0, min(aTo, bTo) - max(aFrom, bFrom))
