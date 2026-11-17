@@ -13,6 +13,9 @@ struct MaterialTakeoffScreen: View {
     @State private var csvURL: URL?
     @State private var csvPreview = ""
     @State private var showingCSVPreview = false
+    @State private var showingEstiMaterExport = false
+    @State private var estiMaterURL: URL?
+    @State private var estiMaterError: String?
 
     private var totals: QuoteTotals {
         QuoteTotals(subtotal: adjustments.total(for: takeoff), settings: quote)
@@ -89,6 +92,9 @@ struct MaterialTakeoffScreen: View {
                 }
             }
             Section {
+                Button("Export quote to EstiMater", systemImage: "square.and.arrow.up") {
+                    prepareEstiMaterQuote()
+                }
             } footer: {
                 Text("Quantities assume 16\" o.c. framing, 4×8 sheets, and a 10% waste factor. Verify against site conditions before ordering.")
             }
@@ -112,6 +118,28 @@ struct MaterialTakeoffScreen: View {
             }
         }
         .sheet(isPresented: $showingCSVPreview) { csvPreviewSheet }
+        .sheet(isPresented: $showingEstiMaterExport) {
+            if let estiMaterURL {
+                VStack(spacing: 16) {
+                    Text("Scanner quote").font(.headline)
+                    Text("Save the file, then choose Import a Scanner quote in EstiMater’s New Proposal screen.")
+                        .multilineTextAlignment(.center)
+                    ShareLink(item: estiMaterURL) {
+                        Label("Share quote file", systemImage: "square.and.arrow.up")
+                    }
+                    Button("Done") { showingEstiMaterExport = false }
+                }
+                .padding()
+                .presentationDetents([.medium])
+            }
+        }
+        .alert("Could not export quote", isPresented: Binding(
+            get: { estiMaterError != nil }, set: { if !$0 { estiMaterError = nil } }
+        )) {
+            Button("OK", role: .cancel) { estiMaterError = nil }
+        } message: {
+            Text(estiMaterError ?? "")
+        }
         .onAppear {
             adjustments = ScanStore.loadTakeoffAdjustments(for: project) ?? TakeoffAdjustments()
             quote = ScanStore.loadQuoteSettings(for: project)
@@ -222,6 +250,22 @@ struct MaterialTakeoffScreen: View {
                     }
                 }
             }
+        }
+    }
+
+    private func prepareEstiMaterQuote() {
+        do {
+            let package = try ScannerQuoteExport.make(project: project, takeoff: takeoff,
+                                                      adjustments: adjustments, settings: quote)
+            let data = try JSONEncoder().encode(package)
+            guard data.count <= 400_000 else { throw ScannerQuoteExport.ExportError.invalidProject }
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent("Scanner Quote " + package.project_id.uuidString + ".json")
+            try data.write(to: url, options: .atomic)
+            estiMaterURL = url
+            showingEstiMaterExport = true
+        } catch {
+            estiMaterError = error.localizedDescription
         }
     }
 
