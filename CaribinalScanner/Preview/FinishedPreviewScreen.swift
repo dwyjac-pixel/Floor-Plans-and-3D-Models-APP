@@ -487,8 +487,9 @@ private struct PreviewComparisonSheet: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                                 .accessibilityLabel(picture.title)
                             ShareLink(item: picture.url) {
-                                Label("Share \(picture.title)", systemImage: "square.and.arrow.up")
+                                Label("Share", systemImage: "square.and.arrow.up")
                             }
+                            .accessibilityLabel("Share \(picture.title)")
                         }
                     }
                     Text("Same camera, lens and lighting in each picture. Only the finishes differ.")

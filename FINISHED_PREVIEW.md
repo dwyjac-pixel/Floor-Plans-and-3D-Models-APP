@@ -179,6 +179,27 @@ In order, each proven before the next:
 3. **Floors and stairs.**
 4. **RealityKit comparison**, time boxed, on the same room, layout, catalog and camera. SceneKit stays the baseline until RealityKit wins on the picture quality list on a real device.
 
+## Ideas beyond milestone 1
+
+Ranked by what a homeowner feels for the work it takes. This came out of a design review that compared three independent proposals with ChatGPT's own answer to the same question. Credit shows who raised it.
+
+| # | Idea | What the homeowner sees | Size | Raised by |
+| --- | --- | --- | --- | --- |
+| 1 | Finished view of a saved revision | The room with a ceiling, lights on and real finishes | Started here | Both |
+| 2 | Doorway reveal and room stops | Opens at eye level in the doorway; one tap glides to each room | Started here | Both |
+| 3 | Take home pictures with a matching code | A still per room, and the same short code on picture, PDF and quote, so an old picture is easy to spot | Days | Both |
+| 4 | Suite check inside the picture | Plain tags: ceiling meets the minimum, egress window is OK, bulkhead clearance | Days | Claude |
+| 5 | Before and after from the same spot | The bare basement wipes to the finished room | 1 to 2 weeks | Both |
+| 6 | Ready to show check | The app asks for any assumed height before a client picture opens; posts, beams, sump and panel can be drawn | Days | ChatGPT |
+| 7 | Their own basement on the EstiMater proposal | The proposal link opens with their room, beside Accept | Days, then 1 to 2 weeks | Claude |
+| 8 | Tap a surface to change it | Tap floor, wall, cabinet or counter; see what the quote includes for it | 2 to 4 weeks | Both |
+| 9 | Good, Better, Best with the price moving | Three packages over the picture, total updates live | 3 weeks or more, after 8 | Both |
+| 10 | Tour video and a tabletop model | Something to send to a spouse | About a week | Claude |
+| 11 | Stand in it | The design at full size in the real basement through the camera | 3 weeks or more | Claude |
+| 12 | AI concept picture held to the drawing | A labelled photo style extra, in EstiMater only, and only if a test on real jobs shows it keeps windows, ceilings and bulkheads where the drawing puts them | A week to test | Both |
+
+Two cautions from that review that still stand. A polished picture can hide an assumed ceiling height or a missing telepost, so idea 6 is a guard, not a nicety. And no price goes beside a picture until the takeoff and quote read the same frozen revision as the picture (idea 9 depends on it).
+
 ## Known gaps
 
 Stated plainly so nobody is surprised:
