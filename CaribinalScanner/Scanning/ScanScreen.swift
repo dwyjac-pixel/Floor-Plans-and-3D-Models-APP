@@ -29,9 +29,10 @@ struct ScanScreen: View {
     var body: some View {
         ZStack {
             RoomCaptureViewRep(controller: controller)
+                // Before .id, so a replacement capture view is started too.
+                .onAppear { controller.start() }
                 .id(ObjectIdentifier(controller.captureView))
                 .ignoresSafeArea()
-                .onAppear { controller.start() }
 
             VStack {
                 HStack {
