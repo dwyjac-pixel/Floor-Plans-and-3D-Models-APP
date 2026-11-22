@@ -27,15 +27,17 @@ struct PreviewMesh {
         return (low, high)
     }
 
-    private mutating func vertex(_ p: V3, _ n: V3, _ uv: V2) -> UInt32 {
+    @discardableResult
+    mutating func vertex(_ p: V3, _ n: V3, _ uv: V2) -> UInt32 {
         positions.append(p)
         normals.append(n)
         uvs.append(uv)
         return UInt32(positions.count - 1)
     }
 
-    /// Adds a triangle wound to face the way `facing` points.
-    private mutating func triangle(_ a: UInt32, _ b: UInt32, _ c: UInt32, facing: V3) {
+    /// Adds a triangle wound to face the way `facing` points. With `vertex`,
+    /// this is the escape hatch for shapes the helpers below do not cover.
+    mutating func triangle(_ a: UInt32, _ b: UInt32, _ c: UInt32, facing: V3) {
         let geometric = simd_cross(positions[Int(b)] - positions[Int(a)], positions[Int(c)] - positions[Int(a)])
         indices += simd_dot(geometric, facing) >= 0 ? [a, b, c] : [a, c, b]
     }
