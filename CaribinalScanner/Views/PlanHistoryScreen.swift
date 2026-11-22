@@ -8,6 +8,7 @@ struct PlanHistoryScreen: View {
     @State private var showingSaveRevision = false
     @State private var revisionName = ""
     @State private var saveError: String?
+    @State private var showingSamplePreview = false
 
     init(history: PlanHistory, project: RenovationProject, onSave: @escaping (PlanHistory) -> Void) {
         _history = State(initialValue: history)
@@ -34,8 +35,16 @@ struct PlanHistoryScreen: View {
                     snapshotLink(snapshot, label: "Proposed · \(snapshot.title)")
                 }
             }
+            Section("Preview Renovation") {
+                Button("Open Sample Bathroom", systemImage: "shower") { showingSamplePreview = true }
+                Text("See a finished room drawn from a plan. To preview your own, open a proposed revision and choose a room.")
+                    .foregroundStyle(.secondary)
+            }
         }
         .navigationTitle("Plan History")
+        .fullScreenCover(isPresented: $showingSamplePreview) {
+            FinishedPreviewScreen(source: .sample)
+        }
         .sheet(isPresented: $showingSaveRevision) {
             NavigationStack {
                 Form {
@@ -96,6 +105,7 @@ struct PlanSnapshotScreen: View {
     @State private var export: SnapshotExport?
     @State private var exportFailed = false
     @State private var measurementExport: MeasurementExport?
+    @State private var previewRoom: RoomEntry?
 
     private var floors: [String] {
         Array(Set(snapshot.rooms.map(\.floorDisplayName))).sorted()
@@ -140,6 +150,11 @@ struct PlanSnapshotScreen: View {
                         if entry.room.outlineNeedsVerification == true {
                             Text("Approximate outline. Verify on site.")
                         }
+                        if snapshot.id != existingConditionsID {
+                            Button("Preview Renovation", systemImage: "sparkles.rectangle.stack") { previewRoom = entry }
+                                .buttonStyle(.borderless)
+                                .padding(.top, 2)
+                        }
                     }
                     .font(.subheadline)
                 }
@@ -149,6 +164,10 @@ struct PlanSnapshotScreen: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingModel) {
             Model3DScreen(project: project, snapshotRooms: rooms, title: title)
+        }
+        .fullScreenCover(item: $previewRoom) { entry in
+            FinishedPreviewScreen(source: FinishedPreviewSource(room: entry.room, roomName: entry.name,
+                                                                revisionTitle: snapshot.title, savedAt: snapshot.savedAt))
         }
         .sheet(item: $export) { file in
             ExportPreviewSheet(title: title, url: file.url) {
