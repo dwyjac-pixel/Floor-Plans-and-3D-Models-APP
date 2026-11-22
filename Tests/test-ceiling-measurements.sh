@@ -11,5 +11,6 @@ swiftc -module-cache-path "$scratch/cache" -o "$scratch/ceiling-tests" \
   CaribinalScanner/Models/ScannerRevisionExport.swift \
   CaribinalScanner/Models/MaterialTakeoff.swift \
   CaribinalScanner/Models/Estimate.swift CaribinalScanner/Models/PriceBook.swift \
+  CaribinalScanner/Models/Quote.swift \
   CaribinalScanner/FloorPlan/Measure.swift Tests/CeilingMeasurementTests.swift
 "$scratch/ceiling-tests" "$@"
