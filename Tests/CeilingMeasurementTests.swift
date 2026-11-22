@@ -44,7 +44,7 @@ struct CeilingMeasurementTests {
         precondition(CornerRoom(manual: restoredManual)?.fieldMeasuredCeilingMeters == 2.4)
         try checkWalkReview()
         try checkPlanHistory()
-        print("Ceiling measurements, suite checks, scan walk review, and plan history passed.")
+        print("Ceiling measurements, suite checks, scan walk review, plan history, and quote cents passed.")
     }
 
     private static func checkPlanHistory() throws {
@@ -116,5 +116,26 @@ struct CeilingMeasurementTests {
             $0.category == "Drywall" && $0.note.contains("verify ceiling heights")
                 && $0.note.contains("verify approximate outlines")
         })
+
+        // Quote export cents. $1,193 with 10% markup is $1,312.30, and 5% GST
+        // on that is exactly 6561.5 cents: half up is $65.62, where binary
+        // floating point gives $65.61 and EstiMater refuses the file.
+        let gst = QuoteSettings.exactPercent(5)!
+        precondition(QuoteSettings.cents(119_300, percent: QuoteSettings.exactPercent(10)!) == 11_930)
+        precondition(QuoteSettings.cents(131_230, percent: gst) == 6_562)
+        precondition(Int((Double(131_230) / 100 * 5 / 100 * 100).rounded()) == 6_561)
+        for (percent, thousandths) in [(5.0, 5_000), (13.0, 13_000), (15.0, 15_000), (12.5, 12_500),
+                                       (9.975, 9_975), (14.975, 14_975)] {
+            let rate = QuoteSettings.exactPercent(percent)!
+            for amount in 0..<60_000 {
+                precondition(QuoteSettings.cents(amount, percent: rate) == (amount * thousandths + 50_000) / 100_000)
+            }
+        }
+        precondition(QuoteSettings.cents(100_000_000_000, percent: gst) == 5_000_000_000)
+        precondition(QuoteSettings.exactPercent(.nan) == nil && QuoteSettings.exactPercent(.infinity) == nil)
+        precondition(QuoteSettings.exactPercent(0.00001) == nil && QuoteSettings.exactPercent(1e16) == nil)
+        struct Rate: Encodable { let tax_rate: Decimal }
+        let written = String(decoding: try JSONEncoder().encode(Rate(tax_rate: QuoteSettings.exactPercent(14.975)!)), as: UTF8.self)
+        precondition(written == #"{"tax_rate":14.975}"#)
     }
 }

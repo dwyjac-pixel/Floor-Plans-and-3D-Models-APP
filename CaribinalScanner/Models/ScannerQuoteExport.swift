@@ -36,7 +36,7 @@ struct ScannerQuoteExport: Encodable {
         var subtotal_cents: Int
         var markup_cents: Int
         var tax_label: String
-        var tax_rate: Double
+        var tax_rate: Decimal
         var tax_cents: Int
         var total_cents: Int
     }
@@ -90,16 +90,17 @@ struct ScannerQuoteExport: Encodable {
         }
         var pricing: Pricing?
         if !lines.isEmpty {
-            guard lines.count <= 500, settings.taxPercent.isFinite, (0...100).contains(settings.taxPercent),
-                  settings.markupPercent.isFinite, settings.markupPercent >= 0,
+            guard lines.count <= 500, (0...100).contains(settings.taxPercent), settings.markupPercent >= 0,
+                  let taxRate = QuoteSettings.exactPercent(settings.taxPercent),
+                  let markupRate = QuoteSettings.exactPercent(settings.markupPercent),
                   !clean(settings.taxLabel).isEmpty else { throw ExportError.pricing }
             let subtotal = lines.reduce(0) { $0 + ($1.amount_cents ?? 0) }
-            let markup = try cents(Double(subtotal) / 100 * settings.markupPercent / 100)
-            let tax = try cents(Double(subtotal + markup) / 100 * settings.taxPercent / 100)
+            guard let markup = QuoteSettings.cents(subtotal, percent: markupRate), markup <= 100_000_000_000,
+                  let tax = QuoteSettings.cents(subtotal + markup, percent: taxRate) else { throw ExportError.pricing }
             let total = subtotal + markup + tax
             guard total <= 100_000_000_000 else { throw ExportError.pricing }
             pricing = Pricing(lines: lines, subtotal_cents: subtotal, markup_cents: markup,
-                              tax_label: clean(settings.taxLabel), tax_rate: settings.taxPercent,
+                              tax_label: clean(settings.taxLabel), tax_rate: taxRate,
                               tax_cents: tax, total_cents: total)
         }
         return ScannerQuoteExport(project_id: projectID, title: clean(project.name), project_type: project.projectType,
