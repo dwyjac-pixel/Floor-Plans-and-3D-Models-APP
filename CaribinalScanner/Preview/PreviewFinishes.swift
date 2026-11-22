@@ -23,6 +23,7 @@ enum PreviewFinish {
         case glassEdge
         case mirror
         case daylight
+        case lamp
         case shadowGap
         case massing
 
@@ -191,7 +192,7 @@ enum PreviewFinish {
         Finish(id: "metal.brushed-brass", slot: .hardware, name: "Brushed brass hardware",
                surface: .metal(hex: "C9A560", roughness: 0.32)),
         Finish(id: "metal.chrome", slot: .hardware, name: "Polished chrome hardware",
-               surface: .metal(hex: "DCDEE0", roughness: 0.1)),
+               surface: .metal(hex: "E4E6E8", roughness: 0.2)),
         Finish(id: "metal.matte-black", slot: .hardware, name: "Matte black hardware",
                surface: .metal(hex: "2A2A2B", roughness: 0.5)),
         // Fixed
@@ -205,6 +206,7 @@ enum PreviewFinish {
         Finish(id: "fixed.glass-edge", slot: .glassEdge, name: "Glass edge", surface: .glassEdge),
         Finish(id: "fixed.mirror", slot: .mirror, name: "Mirror", surface: .mirror),
         Finish(id: "fixed.daylight", slot: .daylight, name: "Daylight", surface: .glow(hex: "F4F8FF", strength: 2.2)),
+        Finish(id: "fixed.lamp", slot: .lamp, name: "Ceiling light", surface: .glow(hex: "FFF1DC", strength: 3.0)),
         Finish(id: "fixed.shadow-gap", slot: .shadowGap, name: "Shadow gap", surface: .flat(hex: "1E1D1C")),
         Finish(id: "fixed.massing", slot: .massing, name: "Not yet detailed", surface: .paint(hex: "CFCBC4", roughness: 0.8)),
     ]
@@ -212,7 +214,7 @@ enum PreviewFinish {
     private static let fixed: [Slot: String] = [
         .ceiling: "fixed.ceiling", .trim: "fixed.trim", .door: "fixed.door", .whiteware: "fixed.whiteware",
         .showerBase: "fixed.shower-base", .glass: "fixed.glass", .glassEdge: "fixed.glass-edge",
-        .mirror: "fixed.mirror", .daylight: "fixed.daylight", .shadowGap: "fixed.shadow-gap", .massing: "fixed.massing",
+        .mirror: "fixed.mirror", .daylight: "fixed.daylight", .lamp: "fixed.lamp", .shadowGap: "fixed.shadow-gap", .massing: "fixed.massing",
     ]
 
     static let looks: [Look] = [

@@ -356,6 +356,15 @@ struct PreviewLayout {
         return nil
     }
 
+    /// Whether a straight edge lies flat against any wall face.
+    func touchesWall(_ a: Point, _ b: Point, tolerance: Double = 0.03) -> Bool {
+        walls.contains { wall in
+            abs((a - wall.start).dot(wall.inward)) <= tolerance && abs((b - wall.start).dot(wall.inward)) <= tolerance
+                && min((a - wall.start).dot(wall.direction), (b - wall.start).dot(wall.direction)) >= -tolerance
+                && max((a - wall.start).dot(wall.direction), (b - wall.start).dot(wall.direction)) <= wall.length + tolerance
+        }
+    }
+
     /// Wall stretches beside a shower or tub.
     func wetIntervals(on wall: WallFace) -> [ClosedRange<Double>] {
         solids.filter { $0.kind == .shower || $0.kind == .tubShower }

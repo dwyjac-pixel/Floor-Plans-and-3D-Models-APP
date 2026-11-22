@@ -297,7 +297,13 @@ struct PreviewGeometryTests {
         expect(doorway.eye.x >= -0.351 && doorway.eye.x <= 0.301, "doorway camera within a step of the wall face")
         expect(near(doorway.eye.y, 1.35), "doorway eye height 1.35")
         expect(abs(doorway.headingDegrees) <= 25.001, "doorway looks into the room")
-        expect(near(doorway.pitchDegrees, -6) && near(doorway.horizontalFOV, 70), "doorway lens")
+        expect(near(doorway.pitchDegrees, 0) && near(doorway.horizontalFOV, 70) && near(doorway.verticalShift, 0.42), "doorway lens")
+        // Level camera, shifted lens: the floor shows from under 2 m away
+        // and the picture still reaches the bulkhead and ceiling.
+        let reach = doorway.verticalReach
+        expect(doorway.eye.y / reach.down < 2.0, "floor in the picture within 2 m")
+        expect(reach.up > 0.25, "picture reaches above eye level")
+        expect(near(overhead.verticalShift, 0), "overhead lens is centred")
         let door = PreviewCamera.entry(in: layout)
         let seen = PreviewCamera.coverage(of: layout, from: doorway.plan, headingDegrees: doorway.headingDegrees, through: door)
         expect(seen >= 0.7, "doorway view holds at least 70 percent of fixture points, got \(seen)")

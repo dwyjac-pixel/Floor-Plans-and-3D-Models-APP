@@ -33,10 +33,21 @@ enum PreviewCamera {
         let eye: Vector
         /// Compass heading of the view in the plan, degrees from +x toward +z.
         let headingDegrees: Double
-        /// Negative looks down. The overhead stop is straight down.
+        /// Negative looks down. Standing stops stay level so walls and
+        /// door frames stay upright; the overhead stop is straight down.
         let pitchDegrees: Double
         /// Horizontal field of view for the fixed 4:3 picture.
         let horizontalFOV: Double
+        /// How far the picture is slid down the lens, as a share of half
+        /// its height: the architectural photographer's shift, which shows
+        /// more floor and less ceiling without tipping the camera.
+        let verticalShift: Double
+
+        /// Tangents of the lowest and highest sight lines in the picture.
+        var verticalReach: (down: Double, up: Double) {
+            let half = tan(horizontalFOV / 2 * .pi / 180) / PreviewCamera.aspect
+            return (half * (1 + verticalShift), half * (1 - verticalShift))
+        }
 
         var plan: PreviewLayout.Point { .init(x: eye.x, z: eye.z) }
         var forward: PreviewLayout.Point {
@@ -50,7 +61,8 @@ enum PreviewCamera {
     /// About a 26 mm lens on a full-frame camera: wide enough for a small
     /// room, short of the stretched look of an ultra-wide.
     static let interiorFOV = 70.0
-    static let interiorPitch = -6.0
+    static let interiorPitch = 0.0
+    static let interiorShift = 0.42
     static let standingEye = 1.35
     static let headroom = 0.45
 
@@ -135,7 +147,8 @@ enum PreviewCamera {
         let inside = centre + door.wall.inward * 0.3
         return Stop(kind: .doorway,
                     eye: .init(x: best.eye.x, y: eyeHeight(for: layout, at: inside), z: best.eye.z),
-                    headingDegrees: best.heading, pitchDegrees: interiorPitch, horizontalFOV: interiorFOV)
+                    headingDegrees: best.heading, pitchDegrees: interiorPitch, horizontalFOV: interiorFOV,
+                    verticalShift: interiorShift)
     }
 
     /// A second standing spot on clear floor, as far from the doorway as
@@ -162,7 +175,8 @@ enum PreviewCamera {
             if score > heading.score + 1e-9 { heading = (degrees, score) }
         }
         return Stop(kind: .inside, eye: .init(x: eye.x, y: eyeHeight(for: layout, at: eye), z: eye.z),
-                    headingDegrees: heading.best, pitchDegrees: interiorPitch, horizontalFOV: interiorFOV)
+                    headingDegrees: heading.best, pitchDegrees: interiorPitch, horizontalFOV: interiorFOV,
+                    verticalShift: interiorShift)
     }
 
     /// Straight down over the middle of the room, high enough to hold all
@@ -178,7 +192,7 @@ enum PreviewCamera {
         let rise = max(halfWidth / tanHalf, halfDepth / (tanHalf / aspect))
         return Stop(kind: .overhead,
                     eye: .init(x: (minX + maxX) / 2, y: layout.ceilingHeight + rise, z: (minZ + maxZ) / 2),
-                    headingDegrees: 0, pitchDegrees: -90, horizontalFOV: fov)
+                    headingDegrees: 0, pitchDegrees: -90, horizontalFOV: fov, verticalShift: 0)
     }
 
     /// Whether the straight line between two standing stops stays clear of
