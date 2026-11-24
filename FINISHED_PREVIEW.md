@@ -6,25 +6,32 @@ Lead: Claude. Reviewer and second builder: Codex. Owner decisions: Dwayne.
 
 ## Where it stands
 
-Milestone 1 is on branch `finished-preview`. It is a first-class prototype of one basement bathroom, not a release.
+The work is on branch `finished-preview`. It is a prototype for the owner to judge, not a release. Nothing has been measured on a physical device.
 
 Built and working:
 
-- One enclosed room from a saved revision, with ceiling, interior lighting, lined door and window openings, baseboard and casing.
-- Finished vanity, toilet and shower, each built to the footprint drawn on the plan. A bulkhead is drawn at its real height.
-- Two curated looks, Warm Modern and Bright Neutral, plus one at a time changes for floor, shower tile, paint, vanity, counter and hardware.
-- Three camera stops worked out from the plan: Doorway, Inside and Overhead. The camera glides between the two standing stops.
-- A captioned still to share, and a comparison of the looks from the same camera.
-- A sample bathroom, so the feature can be tried before a real bathroom is drawn.
+- **One room.** An enclosed room from a saved revision, with ceiling, interior lighting, lined door and window openings, baseboard and casing. Finished vanity, toilet and shower, each built to its drawn footprint. A bulkhead at its real height.
+- **Finishes.** Two looks, Warm Modern and Bright Neutral, plus one at a time changes for floor, shower or tub surround (prefab by default, or tile), paint, vanity, counter and hardware.
+- **Bathroom fixtures to choose.** A ceiling fixture, an above-mirror light where it fits under the ceiling or bulkhead, or pot lights; a plain or lighted mirror. The choice changes which fixtures are drawn. The room is lit the same way for every choice, so finishes are always compared under one light.
+- **Views.** Doorway, Inside and Overhead stops worked out from the plan, with a glide between the two standing stops.
+- **Pictures.** A captioned still, a comparison of the looks from one camera, and saved Option A and Option B with a two page PDF.
+- **A kitchen.** Cabinets, sink, dishwasher, stove, microwave and refrigerator as finished models. Sample only for now: see Held back.
+- **A saved floor walkthrough.** Rooms of a proposed revision that share a doorway are joined at their drawn positions and walked through, with floor and paint chosen per room. A room with no shared doorway is named, not drawn.
+- **Samples.** A sample bathroom, a sample kitchen and a sample floor. The sample floor is a staged set (its hall, living room and bedroom are placed by hand) and says so on screen.
+- **Choices are kept with the project** in `preview_choices.json` in the project folder: synced, backed up, removed with the project. A room reopens the way it was left.
 
-Not built yet: saving finish choices, rooms with interior walls, tubs and kitchens as finished models, any link to the quote, mirror reflections, and everything under Full home below.
+Held back on purpose:
+
+- **Four kitchen fixture kinds** (short upper cabinet, sink cabinet, microwave, dishwasher) exist in the room model but are not offered in the plan editor. Version 1.0.2 skips a fixture whose kind it does not know, then saves the room and every saved revision without it. A kitchen drawn with them would lose them for good on any older device that shares the project. Before they can be offered, a version that keeps unknown kinds has to replace 1.0.2. This was reproduced against the 1.0.2 model: a room with a stove, a dishwasher and a sink cabinet reads back as a stove alone.
+
+Not built yet: rooms with interior walls, tubs as finished models, any link to the quote, mirror reflections, carpet or plank floors in a walkthrough (every floor is tile), separate faucet and door handle finishes, stairs.
 
 ## Rules
 
 1. **The saved revision is the drawing.** The preview is built from one room of an immutable `PlanHistory.Snapshot`. It never reads the live editable plan and never writes to the snapshot.
 2. **The picture never invents a dimension.** Wall faces sit on the plan line and wall thickness goes outward, so a clear size in the picture equals the drawing. When the plan lacks a number (a door height, a window sill, a bulkhead drop, a ceiling that was scanned and not measured), the default is used, named on screen and printed under every still.
 3. **Nothing is silently clipped.** A room the preview cannot draw faithfully does not open. The screen says why in plain words. See Blocking problems.
-4. **It stays apart from the editor and the exports.** Everything is under `CaribinalScanner/Preview/`. `Model3DBuilder`, `Interactive3DView`, `Model3DScreen`, the USDZ export and the plan editor are untouched. The only edits outside the folder are two entry buttons in `Views/PlanHistoryScreen.swift`.
+4. **It stays apart from the editor and the exports, with five stated exceptions.** The feature lives under `CaribinalScanner/Preview/`. Outside it: entry buttons in `Views/PlanHistoryScreen.swift`; four fixture kinds in `Models/CornerRoom.swift` (held out of the editor, see Where it stands); matching cases for them in `Export/Model3DBuilder.swift` and `FloorPlan/FloorPlanCanvas.swift`; `PDFExporter.makeBathroomComparison`; and one line in `Models/SuiteCompliance.swift`. Nothing else in the editor, the 3D model, the USDZ export or the existing PDF changed. Any further edit outside the folder is a decision, not a convenience.
 5. **On the device, no network, no key.** Textures are drawn in code. Nothing is downloaded or uploaded. The App Privacy answer does not change.
 6. **It is an illustration and says so.** Every still starts with "Illustration from the drawing" and names the room and revision. Finish names are generic; no brand or product is implied.
 7. **No dashes in anything a user reads.**
@@ -44,6 +51,13 @@ Not built yet: saving finish choices, rooms with interior walls, tubs and kitche
 | `PreviewFixtures.swift`, `PreviewVanity.swift`, `PreviewToilet.swift`, `PreviewShower.swift` | Fixture models | SceneKit |
 | `PreviewStill.swift` | Off screen stills and the caption band | SceneKit, CoreText |
 | `FinishedPreviewScreen.swift` | The screen, the model behind it and the timing readout | SwiftUI |
+| `PreviewBathroomLighting.swift` | Light and mirror choices and the clearance rule | SceneKit |
+| `PreviewKitchen.swift`, `PreviewReferenceKitchen.swift` | Kitchen models and the sample kitchen | SceneKit |
+| `PreviewHallway.swift`, `PreviewReferenceFloor.swift` | The staged sample floor | SceneKit |
+| `SavedFloorWalkthrough.swift` | Joins saved rooms through shared doorways and routes the camera | SceneKit |
+| `ReferenceFloorScreen.swift` | The walkthrough screen, for the sample and for a saved floor | SwiftUI |
+| `BathroomComparison.swift` | Saved Option A and B and their comparison | SwiftUI |
+| `PreviewChoiceStore.swift` | Choices kept in the project folder | Foundation, iOS only |
 
 The first four files import only Foundation. That is deliberate: the fidelity tests run against them on the Mac in seconds, and a second renderer (RealityKit) can be built from the same layout, camera and catalog and be held to the same tests.
 
@@ -84,7 +98,7 @@ This gate is about model to drawing only. It says nothing about whether the draw
 | A7 Defaults are named | Each default appears in the assumptions and in the caption | Auto |
 | A8 Wall finish areas | Paint and tile cells add up to wall area less openings; no cell inside an opening | Auto |
 | A9 Same drawing, same picture | Layout signature is stable and changes on a 10 mm move | Auto |
-| A10 Scene agrees with layout | Node bounds in the built scene within 2 mm of the layout | Open |
+| A10 Scene agrees with layout | Node bounds in the built scene within 2 mm of the layout | Auto (`test-preview-scene.sh`) |
 | A11 Overhead is not mirrored | Plan x to the right, plan z down the page | Manual (checked by eye on the reference room), Auto is Open |
 | A12 No clipping, no inverted ceiling, no light leaks | Checked by eye from all three stops on a device | Manual |
 
@@ -96,9 +110,9 @@ Loading and swapping are measured separately, as Codex asked. The room and both 
 
 | Gate | Pass when | Status |
 | --- | --- | --- |
-| B1 Camera does not move | Same camera node, same transform before and after a swap | Open (by design true; needs a test) |
-| B2 No rebuild | `PreviewRoomScene.buildCount` and node count unchanged across swaps | Open (counter exists; needs a test) |
-| B3 Only the chosen slot changes | Other slots keep the same material | Open |
+| B1 Camera does not move | Same camera node, same transform before and after a swap | Auto (`test-preview-scene.sh`) |
+| B2 No rebuild | `PreviewRoomScene.buildCount` and node count unchanged across swaps | Auto (`test-preview-scene.sh`) |
+| B3 Only the chosen slot changes | Other slots keep the same material | Auto (`test-preview-scene.sh`) |
 | B4 Warm swap latency | Tap to first frame under 200 ms on the oldest supported phone | Open (device) |
 | B5 Cold entry | Reported on its own, never mixed into B4 | Open (device) |
 
@@ -200,26 +214,51 @@ Ranked by what a homeowner feels for the work it takes. This came out of a desig
 
 Two cautions from that review that still stand. A polished picture can hide an assumed ceiling height or a missing telepost, so idea 6 is a guard, not a nicety. And no price goes beside a picture until the takeoff and quote read the same frozen revision as the picture (idea 9 depends on it).
 
+## Review of November 24
+
+Six reviewers went through everything added after milestone 1. They were cut off before finishing, but each saved its findings as it went, and every item below was reproduced before it was fixed.
+
+Fixed:
+
+1. **Light choices washed out the picture.** The ceiling fixture, above-mirror light and lighted mirror each added an uncalibrated bulb near a wall. The sample bathroom opened with about a tenth of the picture at pure white; a lighted mirror took the inside view past a third. Now the calibrated ceiling spots light every choice. Tested: under 2 percent pure white for every light and mirror choice, both standing views, both looks.
+2. **Dark smudged frames and black chrome.** Ambient occlusion radius was 0.16 m. At 0.04 m the frame round flat panels is gone and a contact line under fixtures stays.
+3. **A joined floor was lit by every room's sun.** A four room floor had eight directional lights and four shadow casters; ceilings burned white and the same room changed brightness with the number of rooms and between runs. A floor now has one key and one bounce, and each room's ceiling lights reach only that room. Tested.
+4. **The walkthrough picture was stretched** on any screen that was not an upright phone: 7 percent on an upright iPad, more than double sideways. It now keeps its 4:3 shape.
+5. **The walkthrough carried no honesty labels** and the sample floor never said it was a sample. Both now do, with the revision, assumed dimensions and plain blocks named.
+6. **Saved choices lived outside the project** (not synced, not backed up, never removed, shared with an imported copy) and were lost by a reworded label or renamed slot. They are now in the project folder, saved by stable keys and read tolerantly.
+7. **Four fixture kinds would be lost on 1.0.2.** Held out of the editor (see Where it stands).
+8. Smaller: no walkthrough on Existing Conditions; Show Whole Room is now Wide View; the suite check counts a sink cabinet or microwave as kitchen fixtures; cabinet finish names no longer say vanity in a kitchen; the saved floor path now has tests.
+
+Open, found but not fixed:
+
+- **Sample floor: leaving the kitchen**, the camera turns into the open kitchen door and the picture is a blank grey panel for about a second.
+- **Plan editor, stacked items.** A tap picks the first fixture under the finger, not the smallest, and labels of stacked items overprint. It only bites once the four held kinds are offered.
+- **A saved floor ignores the saved floor type.** A bedroom saved as carpet is drawn with tile.
+- **The runtime review did not finish.** `FinishedPreviewScreen.swift` (about 700 lines), the PDF path and memory use on older phones have not been reviewed.
+- **iPad was not run.** The 4:3 fix was checked on an iPhone simulator only.
+
 ## Known gaps
 
 Stated plainly so nobody is surprised:
 
-- It is a clean illustration, not a photograph. Walls are evenly lit and there is no real bounced light.
+- It is a clean illustration, not a photograph. There is no real bounced light.
 - The mirror is a flat silver panel. It does not reflect the room.
-- The toilet reads as a toilet but is plain.
+- With the prefab surround as the default, the two looks no longer differ in the shower walls.
 - The vanity sits right inside the door in the reference room, so the doorway view shows more counter than a photographer would choose.
-- Rooms with interior walls are blocked. Dwayne's saved plans are whole basement scans, so none of them can be previewed yet; a bathroom has to be saved as its own room.
-- Finish choices are not saved between visits.
-- Load takes about five seconds in a debug build because textures are drawn in code without optimisation. Release builds are much faster on the Mac; a phone has not been measured.
+- Rooms with interior walls are blocked. Dwayne's saved plans are whole basement scans, so none of them can be previewed yet; each room has to be saved as its own room.
+- Load takes several seconds in a debug build because textures are drawn in code without optimisation. A phone has not been measured.
 
 ## Running it
 
 ```
 sh Tests/test-preview-geometry.sh          # fidelity, camera, catalog, captions
+sh Tests/test-preview-scene.sh             # the built room, swaps, light budget, blown whites, saved choices
+sh Tests/test-preview-floor.sh             # sample floor and a saved floor joined through a doorway
 sh Tests/render-preview-stills.sh out/     # both looks from every stop, on the Mac
+sh Tests/render-doorway-pair.sh out/       # the locked doorway pair with a manifest
 ```
 
-On a device: open a project, Plan History, Open Sample Bathroom. For your own room: open a proposed revision and tap Preview Renovation under the room. Tap the picture three times for timings.
+On a device: open a project, Plan History, then Open Sample Bathroom, Open Sample Kitchen or Open Sample Floor. For your own room: open a proposed revision and tap Preview Renovation under the room, or Walk Through Saved Floor when the revision has two or more rooms. In the room preview, tap the picture three times for timings.
 
 ## Residential product priorities
 
