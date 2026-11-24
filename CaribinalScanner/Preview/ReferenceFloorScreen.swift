@@ -62,8 +62,9 @@ struct ReferenceFloorScreen: View {
                                     .background(.ultraThinMaterial, in: Capsule())
                                     .padding(8)
                             }
-                            .frame(maxWidth: .infinity, maxHeight: proxy.size.height * 0.53)
-                            .background(Color.black)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: min(proxy.size.height * 0.53, proxy.size.width / PreviewCamera.aspect))
+                            .background(Color.black, ignoresSafeAreaEdges: [])
                         Form {
                             Section("Walkthrough") {
                                 if walking {
