@@ -74,8 +74,7 @@ extension PreviewRoomScene {
             pane(x: (x - 0.005)...(x + 0.005), z: (-hd + 0.004)...(hd - 0.03))
             block(.hardware, in: node, x: (x - 0.009)...(x + 0.009), y: pan...(pan + 0.012), z: -hd...(hd - 0.03))
         }
-
-        emit(glass, .glass, in: node)
+        add(glass.geometry(), slot: .glass, to: node)
 
         // Rain head and valve on an end wall, or the back wall failing that.
         let headY = min(2.02, clear - 0.10)

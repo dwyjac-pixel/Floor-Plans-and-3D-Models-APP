@@ -11,6 +11,8 @@ enum PreviewCamera {
         case doorway
         case inside
         case overhead
+        case kitchenWide
+        case kitchenDetails
 
         /// Button title.
         var title: String {
@@ -18,6 +20,8 @@ enum PreviewCamera {
             case .doorway: "Doorway"
             case .inside: "Inside"
             case .overhead: "Overhead"
+            case .kitchenWide: "Wide"
+            case .kitchenDetails: "Close-Up"
             }
         }
     }
@@ -76,10 +80,80 @@ enum PreviewCamera {
         guard layout.problems.isEmpty, layout.floor.count >= 3 else { return [] }
         var stops: [Stop] = []
         let entry = doorway(in: layout)
+        let kitchen = layout.solids.filter { $0.kind.category == .kitchen }
+        if !kitchen.isEmpty {
+            if let wide = kitchenWide(in: layout, fixtures: kitchen) { stops.append(wide) }
+            if let detail = kitchenDetails(in: layout, fixtures: kitchen) { stops.append(detail) }
+        }
         if let entry { stops.append(entry) }
-        if let second = inside(in: layout, awayFrom: entry?.plan) { stops.append(second) }
+        if kitchen.isEmpty, let second = inside(in: layout, awayFrom: entry?.plan) { stops.append(second) }
         stops.append(overhead(of: layout))
         return stops
+    }
+
+    private static func kitchenWide(in layout: PreviewLayout, fixtures: [PreviewLayout.Solid]) -> Stop? {
+        guard let first = fixtures.first else { return nil }
+        let centre = fixtures.reduce(PreviewLayout.Point(x: 0, z: 0)) { $0 + $1.centre } * (1 / Double(fixtures.count))
+        let xs = layout.floor.map(\.x), zs = layout.floor.map(\.z)
+        let x0 = xs.min() ?? 0, x1 = xs.max() ?? 0, z0 = zs.min() ?? 0, z1 = zs.max() ?? 0
+        let fov = 102.0
+        let occludingDoor = entry(in: layout).flatMap { entry in
+            entry.void.kind == .door && !entry.void.swingsOutward ? entry : nil
+        }
+        var best: (stop: Stop, score: Double)?
+        for i in 0...12 {
+            for j in 0...12 {
+                let point = PreviewLayout.Point(x: x0 + (x1 - x0) * Double(i) / 12,
+                                                z: z0 + (z1 - z0) * Double(j) / 12)
+                guard layout.contains(point), layout.clearance(from: point) > 0.20,
+                      !layout.isInsideSolid(point, margin: 0.20) else { continue }
+                if let leaf = occludingDoor {
+                    let hinge = leaf.wall.point(at: leaf.void.hingeAtEnd ? leaf.void.to : leaf.void.from)
+                    let delta = point - hinge
+                    let depth = delta.dot(leaf.wall.inward)
+                    if depth < leaf.void.width + 0.12, abs(delta.dot(leaf.wall.direction)) < 0.45 { continue }
+                }
+                let view = centre - point
+                guard view.length > 0.20 else { continue }
+                let heading = atan2(view.z, view.x) * 180 / .pi
+                let faceOn = -view.dot(first.zAxis) / view.length
+                let score = coverage(of: layout, from: point, headingDegrees: heading, fov: fov,
+                                     around: occludingDoor)
+                    + min(view.length, 5) * 0.025
+                    + faceOn * 0.20
+                if best == nil || score > best!.score {
+                    best = (Stop(kind: .kitchenWide,
+                                 eye: .init(x: point.x, y: eyeHeight(for: layout, at: point) + 0.12, z: point.z),
+                                 headingDegrees: heading, pitchDegrees: -8, horizontalFOV: fov, verticalShift: 0.20),
+                            score)
+                }
+            }
+        }
+        return best?.stop
+    }
+
+    private static func kitchenDetails(in layout: PreviewLayout, fixtures: [PreviewLayout.Solid]) -> Stop? {
+        let focus = fixtures.first { $0.kind == .kitchenSink } ?? fixtures.first { $0.kind == .stove } ?? fixtures.first
+        guard let focus else { return nil }
+        let range = fixtures.first { $0.kind == .stove && $0.id != focus.id }
+        let target: PreviewLayout.Point
+        if let range, range.zAxis.dot(focus.zAxis) > 0.95,
+           abs((range.centre - focus.centre).dot(focus.zAxis)) < 0.25,
+           (range.centre - focus.centre).length < 2.2 {
+            target = focus.centre + (range.centre - focus.centre) * 0.42
+        } else {
+            target = focus.centre
+        }
+        for distance in [1.60, 1.30, 1.00, 0.80] {
+            let point = target + focus.zAxis * (focus.depth / 2 + distance)
+            guard layout.contains(point), layout.clearance(from: point) > 0.20,
+                  !layout.isInsideSolid(point, margin: 0.20) else { continue }
+            let forward = target - point
+            return Stop(kind: .kitchenDetails, eye: .init(x: point.x, y: eyeHeight(for: layout, at: point), z: point.z),
+                        headingDegrees: atan2(forward.z, forward.x) * 180 / .pi, pitchDegrees: -7,
+                        horizontalFOV: 78, verticalShift: 0.05)
+        }
+        return nil
     }
 
     /// The door the client walks in through: the first hinged door on the
@@ -99,7 +173,8 @@ enum PreviewCamera {
     /// `nearest` and, when given, only sight lines `through` a doorway.
     static func coverage(of layout: PreviewLayout, from eye: PreviewLayout.Point, headingDegrees: Double,
                          fov: Double = interiorFOV, nearest: Double = 0.35,
-                         through door: (wall: PreviewLayout.WallFace, void: PreviewLayout.Void)? = nil) -> Double {
+                         through door: (wall: PreviewLayout.WallFace, void: PreviewLayout.Void)? = nil,
+                         around openLeaf: (wall: PreviewLayout.WallFace, void: PreviewLayout.Void)? = nil) -> Double {
         let forward = PreviewLayout.Point(x: cos(headingDegrees * .pi / 180), z: sin(headingDegrees * .pi / 180))
         let limit = cos((fov / 2 - 2) * .pi / 180)
         var seen = 0.0, total = 0.0
@@ -117,6 +192,18 @@ enum PreviewCamera {
                         let t = -depthEye / (depthPoint - depthEye)
                         let along = ((eye + ray * t) - door.wall.start).dot(door.wall.direction)
                         guard along > door.void.from + 0.02, along < door.void.to - 0.02 else { continue }
+                    }
+                }
+                if let leaf = openLeaf {
+                    let hinge = leaf.wall.point(at: leaf.void.hingeAtEnd ? leaf.void.to : leaf.void.from)
+                    let across = ray.dot(leaf.wall.direction)
+                    let fromHinge = (eye - hinge).dot(leaf.wall.direction)
+                    if abs(across) > 1e-6 {
+                        let t = -fromHinge / across
+                        let depth = (eye + ray * t - hinge).dot(leaf.wall.inward)
+                        if t > 0, t < 1, depth >= 0, depth <= leaf.void.width { continue }
+                    } else if abs(fromHinge) < 0.04 {
+                        continue
                     }
                 }
                 seen += 1
@@ -198,7 +285,8 @@ enum PreviewCamera {
     /// Whether the straight line between two standing stops stays clear of
     /// walls and fixtures, so the camera may glide rather than cut.
     static func glideIsClear(from a: Stop, to b: Stop, in layout: PreviewLayout) -> Bool {
-        guard a.kind != .overhead, b.kind != .overhead else { return false }
+        guard a.kind != .overhead, b.kind != .overhead,
+              a.horizontalFOV == b.horizontalFOV else { return false }
         let door = entry(in: layout)
         for step in 0...40 {
             let t = Double(step) / 40

@@ -24,6 +24,12 @@ final class PreviewRoomScene {
     /// Ceiling, bulkheads and light trims. Hidden from the overhead stop so
     /// the camera looks straight into the room.
     let overheadHidden = SCNNode()
+    let potFixtures = SCNNode()
+    let potLights = SCNNode()
+    let optionalLights = SCNNode()
+    var vanityMount: PreviewVanityMount?
+    var lightStyle = PreviewBathroomLight.potLights
+    var mirrorStyle = PreviewBathroomMirror.plain
 
     /// How many rooms have been built. A finish swap must never raise it.
     private(set) static var buildCount = 0
@@ -36,14 +42,20 @@ final class PreviewRoomScene {
         stops = PreviewCamera.stops(for: layout)
         Self.buildCount += 1
         scene.background.contents = PreviewTextures.color("26282B")
-        scene.lightingEnvironment.contents = PreviewFinishLibrary.environment
-        scene.lightingEnvironment.intensity = 1.2
+        // The fill light: a soft picture of this room's own shell, drawn
+        // from the plan. It does not depend on the look.
+        let environment = PreviewTextures.environment(for: layout, lamps: lampPoints)
+        scene.lightingEnvironment.contents = environment.image
+        scene.lightingEnvironment.intensity = CGFloat(environment.intensity)
         overheadHidden.name = "ceiling-group"
         scene.rootNode.addChildNode(overheadHidden)
         buildShell()
         buildOpenings()
         buildFixtures()
         buildLights()
+        if isBathroom {
+            setBathroomLighting(defaultBathroomLight, mirror: .plain)
+        }
         buildCamera()
         apply(selection)
         if let first = stops.first { place(at: first) }
@@ -279,23 +291,28 @@ final class PreviewRoomScene {
         let xs = layout.floor.map(\.x), zs = layout.floor.map(\.z)
         let centre = v(((xs.min() ?? 0) + (xs.max() ?? 0)) / 2, 0, ((zs.min() ?? 0) + (zs.max() ?? 0)) / 2)
 
+        // Light is counted so that 1 is the amount that shows a surface at
+        // its own colour. The fill from the environment is about half of
+        // that everywhere; the lights below add the rest, and the brightest
+        // white in the room stays a little under 1 so it keeps its shading.
+
         // One soft key from above. It is the only light that casts
         // shadows; walls and ceiling do not block it, so fixtures sit on
-        // the floor with a shadow and the room itself stays evenly lit.
+        // the floor with a shadow whatever the room's shape.
         let key = SCNLight()
         key.type = .directional
-        key.intensity = 400
-        key.temperature = 6100
+        key.intensity = 210
+        key.color = PreviewTextures.light(1, 0.985, 0.955)
         key.castsShadow = true
-        key.shadowRadius = 5
+        key.shadowRadius = 6
         key.shadowSampleCount = 16
-        key.shadowMapSize = CGSize(width: 2048, height: 2048)
-        key.shadowColor = PreviewTextures.color("000000", alpha: 0.42)
+        key.shadowMapSize = CGSize(width: 1024, height: 1024)
+        key.shadowColor = PreviewTextures.color("000000", alpha: 1)
         key.shadowBias = 3
         let keyNode = SCNNode()
         keyNode.name = "key"
         keyNode.light = key
-        keyNode.simdPosition = centre + V3(-0.9, 6, 1.3)
+        keyNode.simdPosition = centre + V3(-1.5, 6, 1.4)
         keyNode.simdLook(at: centre)
         root.addChildNode(keyNode)
 
@@ -303,8 +320,7 @@ final class PreviewRoomScene {
         // read as white. SceneKit has no bounce light of its own.
         let bounce = SCNLight()
         bounce.type = .directional
-        bounce.intensity = 300
-        bounce.temperature = 6100
+        bounce.intensity = 380
         bounce.castsShadow = false
         let bounceNode = SCNNode()
         bounceNode.name = "bounce"
@@ -313,32 +329,36 @@ final class PreviewRoomScene {
         bounceNode.simdLook(at: centre + V3(0.05, 1, 0.08))
         root.addChildNode(bounceNode)
 
-        // Recessed ceiling lights: a warm pool on the floor and a soft
-        // scallop on the walls. No shadows, to keep the frame rate.
+        // Recessed ceiling lights. Each is a wide warm cone: strongest on
+        // the wall a little below the ceiling, easing off toward the floor
+        // and into the corners, and cut off before it can reach the ceiling
+        // or a bulkhead beside it. No shadows, to keep the frame rate.
+        // SceneKit counts a spot so that an intensity of pi lights a
+        // surface one metre away at 1.
+        root.addChildNode(potLights)
+        overheadHidden.addChildNode(potFixtures)
+        overheadHidden.addChildNode(optionalLights)
         for (index, point) in lampPoints.enumerated() {
             let lamp = SCNLight()
             lamp.type = .spot
-            lamp.intensity = 6
-            lamp.temperature = 5000
-            lamp.spotInnerAngle = 20
-            lamp.spotOuterAngle = 160
-            lamp.attenuationStartDistance = 0
-            lamp.attenuationEndDistance = 7
-            lamp.attenuationFalloffExponent = 2
+            lamp.intensity = 1.25
+            lamp.color = PreviewTextures.light(1, 0.95, 0.87)
+            lamp.spotInnerAngle = 90
+            lamp.spotOuterAngle = 162
             lamp.castsShadow = false
             let node = SCNNode()
             node.name = "lamp-\(index)"
             node.light = lamp
             node.simdPosition = v(point, layout.ceilingHeight - 0.03)
             node.simdEulerAngles = V3(-.pi / 2, 0, 0)
-            root.addChildNode(node)
+            potLights.addChildNode(node)
 
             let trimRing = SCNCylinder(radius: 0.062, height: 0.004)
-            let ring = add(trimRing, slot: .trim, to: overheadHidden)
+            let ring = add(trimRing, slot: .trim, to: potFixtures)
             ring.simdPosition = v(point, layout.ceilingHeight - 0.002)
             ring.castsShadow = false
             let lens = SCNCylinder(radius: 0.046, height: 0.004)
-            add(lens, slot: .lamp, to: overheadHidden).simdPosition = v(point, layout.ceilingHeight - 0.004)
+            add(lens, slot: .lamp, to: potFixtures).simdPosition = v(point, layout.ceilingHeight - 0.004)
         }
     }
 
@@ -349,11 +369,15 @@ final class PreviewRoomScene {
         camera.projectionDirection = .horizontal
         camera.zNear = 0.05
         camera.zFar = 60
+        // A fixed exposure with no tone curve: what a light adds is what
+        // the picture shows, so a paint colour is not bent on its way to
+        // the screen and two looks are always exposed alike.
         camera.wantsHDR = true
         camera.wantsExposureAdaptation = false
-        camera.exposureOffset = -0.15
-        camera.screenSpaceAmbientOcclusionIntensity = 0.55
-        camera.screenSpaceAmbientOcclusionRadius = 0.22
+        camera.exposureOffset = 0
+        camera.whitePoint = 1
+        camera.screenSpaceAmbientOcclusionIntensity = 0.6
+        camera.screenSpaceAmbientOcclusionRadius = 0.16
         camera.screenSpaceAmbientOcclusionBias = 0.02
         camera.screenSpaceAmbientOcclusionDepthThreshold = 0.2
         camera.screenSpaceAmbientOcclusionNormalThreshold = 0.3

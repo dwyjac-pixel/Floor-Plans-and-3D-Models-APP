@@ -19,9 +19,28 @@ extension PreviewRoomScene {
             case .vanity: buildVanity(solid, in: node)
             case .toilet: buildToilet(solid, in: node)
             case .shower: buildShower(solid, in: node)
+            case .tubShower: buildTub(solid, in: node)
             case .bulkhead: buildBulkhead(solid, in: node)
+            case .baseCabinets, .island, .upperCabinets, .shortUpperCabinet, .kitchenSink: buildKitchenCabinet(solid, in: node)
+            case .fridge, .stove, .microwave, .dishwasher: buildKitchenAppliance(solid, in: node)
             default: buildMassing(solid, in: node)
             }
+        }
+    }
+
+    private func buildTub(_ solid: PreviewLayout.Solid, in node: SCNNode) {
+        let x = Float(solid.width / 2), z = Float(solid.depth / 2)
+        guard x > 0.10, z > 0.10 else {
+            buildMassing(solid, in: node)
+            return
+        }
+        let rim: Float = 0.065
+        block(.whiteware, in: node, x: -x...x, y: 0...0.18, z: -z...z, chamfer: 0.02)
+        for xs in [-x...(-x + rim), (x - rim)...x] {
+            block(.whiteware, in: node, x: xs, y: 0.17...0.53, z: -z...z, chamfer: 0.02)
+        }
+        for zs in [-z...(-z + rim), (z - rim)...z] {
+            block(.whiteware, in: node, x: (-x + rim)...(x - rim), y: 0.17...0.53, z: zs, chamfer: 0.02)
         }
     }
 
@@ -88,8 +107,6 @@ extension PreviewRoomScene {
         let ceiling = Float(layout.ceilingHeight)
         let range: ClosedRange<Float>
         switch solid.kind {
-        case .upperCabinets: range = min(1.37, ceiling - 0.8)...min(2.13, ceiling - 0.02)
-        case .fridge: range = 0...min(1.75, ceiling - 0.05)
         case .furnace, .waterHeater: range = 0...min(1.5, ceiling - 0.05)
         case .bedQueen, .bedSingle, .tubShower: range = 0...0.55
         case .sofa: range = 0...0.8

@@ -25,6 +25,7 @@ enum PreviewFinish {
         case daylight
         case lamp
         case shadowGap
+        case applianceSteel
         case massing
 
         /// Slots the contractor can change one at a time.
@@ -33,7 +34,7 @@ enum PreviewFinish {
         var title: String {
             switch self {
             case .floor: "Floor"
-            case .wetWall: "Shower tile"
+            case .wetWall: "Shower or Tub Surround"
             case .wall: "Paint"
             case .vanityCabinet: "Vanity"
             case .vanityTop: "Counter"
@@ -157,7 +158,9 @@ enum PreviewFinish {
         Finish(id: "floor.charcoal-24x24", slot: .floor, name: "Charcoal porcelain, 24 x 24 in",
                surface: .tile(Tile(width: 610, height: 610, grout: 3, pattern: .stacked,
                                    tileHex: "55585A", groutHex: "3F4142", roughness: 0.45, variation: 0.05, mottle: 0.4))),
-        // Shower tile
+        // Shower and tub surrounds
+        Finish(id: "wet.prefab", slot: .wetWall, name: "Prefab surround",
+               surface: .paint(hex: "EEEDE8", roughness: 0.32)),
         Finish(id: "wet.ivory-4x12", slot: .wetWall, name: "Ivory ceramic, 4 x 12 in, stacked upright",
                surface: .tile(Tile(width: 100, height: 300, grout: 2, pattern: .stacked,
                                    tileHex: "EFE9DD", groutHex: "D6CFC2", roughness: 0.18, variation: 0.035, mottle: 0.1))),
@@ -207,6 +210,7 @@ enum PreviewFinish {
         Finish(id: "fixed.mirror", slot: .mirror, name: "Mirror", surface: .mirror),
         Finish(id: "fixed.daylight", slot: .daylight, name: "Daylight", surface: .glow(hex: "F4F8FF", strength: 2.2)),
         Finish(id: "fixed.lamp", slot: .lamp, name: "Ceiling light", surface: .glow(hex: "FFF1DC", strength: 3.0)),
+        Finish(id: "fixed.appliance-steel", slot: .applianceSteel, name: "Stainless steel", surface: .metal(hex: "CAD0D2", roughness: 0.34)),
         Finish(id: "fixed.shadow-gap", slot: .shadowGap, name: "Shadow gap", surface: .flat(hex: "1E1D1C")),
         Finish(id: "fixed.massing", slot: .massing, name: "Not yet detailed", surface: .paint(hex: "CFCBC4", roughness: 0.8)),
     ]
@@ -214,16 +218,16 @@ enum PreviewFinish {
     private static let fixed: [Slot: String] = [
         .ceiling: "fixed.ceiling", .trim: "fixed.trim", .door: "fixed.door", .whiteware: "fixed.whiteware",
         .showerBase: "fixed.shower-base", .glass: "fixed.glass", .glassEdge: "fixed.glass-edge",
-        .mirror: "fixed.mirror", .daylight: "fixed.daylight", .lamp: "fixed.lamp", .shadowGap: "fixed.shadow-gap", .massing: "fixed.massing",
+        .mirror: "fixed.mirror", .daylight: "fixed.daylight", .lamp: "fixed.lamp", .shadowGap: "fixed.shadow-gap", .massing: "fixed.massing", .applianceSteel: "fixed.appliance-steel",
     ]
 
     static let looks: [Look] = [
         Look(id: "warm-modern", name: "Warm Modern", finishes: fixed.merging([
-            .floor: "floor.greige-12x24", .wetWall: "wet.ivory-4x12", .wall: "wall.warm-white",
+            .floor: "floor.greige-12x24", .wetWall: "wet.prefab", .wall: "wall.warm-white",
             .vanityCabinet: "vanity.walnut", .vanityTop: "top.white-quartz", .hardware: "metal.brushed-brass",
         ]) { $1 }),
         Look(id: "bright-neutral", name: "Bright Neutral", finishes: fixed.merging([
-            .floor: "floor.grey-12x24", .wetWall: "wet.white-3x6", .wall: "wall.soft-grey",
+            .floor: "floor.grey-12x24", .wetWall: "wet.prefab", .wall: "wall.soft-grey",
             .vanityCabinet: "vanity.white", .vanityTop: "top.veined-quartz", .hardware: "metal.chrome",
         ]) { $1 }),
     ]

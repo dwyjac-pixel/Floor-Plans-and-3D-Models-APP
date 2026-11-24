@@ -9,10 +9,14 @@ struct FinishedPreviewSource {
     let roomName: String
     let revisionTitle: String
     let savedAt: Date?
+    var includesReferenceHallway = false
+    var comparisonKey = "sample-bathroom"
+    var floorRooms: [RoomEntry] = []
+    var markers: [PlanMarkers.Marker] = []
 
     static var sample: FinishedPreviewSource {
         FinishedPreviewSource(room: PreviewReferenceRoom.bathroom(), roomName: PreviewReferenceRoom.name,
-                              revisionTitle: "Sample drawing", savedAt: nil)
+                              revisionTitle: "Sample drawing", savedAt: nil, includesReferenceHallway: true)
     }
 }
 
@@ -53,12 +57,19 @@ final class FinishedPreviewModel: ObservableObject {
     @Published private(set) var selection = PreviewFinish.Selection()
     @Published private(set) var stop: PreviewCamera.Kind = .doorway
     @Published private(set) var readout = PreviewReadout()
+    @Published private(set) var lightStyle = PreviewBathroomLight.potLights
+    @Published private(set) var mirrorStyle = PreviewBathroomMirror.plain
+    @Published var vanityClearanceConfirmed = false
+    @Published private(set) var preparingFinish = false
+    private var finishRequest: Task<Void, Never>?
+    @Published private(set) var hallwayPlaying = false
+    private(set) var hallway: PreviewHallway?
     @Published var stageOpacity = 1.0
 
     let timing = PreviewFrameTiming()
     private let signposter = OSSignposter(subsystem: "com.caribinalcreations.scanner", category: "FinishedPreview")
     private let logger = Logger(subsystem: "com.caribinalcreations.scanner", category: "FinishedPreview")
-    private var prepareStarted: CFTimeInterval = 0
+    private var firstFrameStarted: CFTimeInterval = 0
 
     init(source: FinishedPreviewSource) {
         self.source = source
@@ -69,42 +80,48 @@ final class FinishedPreviewModel: ObservableObject {
     var stops: [PreviewCamera.Stop] { room?.stops ?? [] }
     var lookName: String { selection.overrides.isEmpty ? selection.look.name : "\(selection.look.name), customised" }
 
-    /// Builds the room and both looks' materials off the main thread. The
-    /// picture stays covered until the view reports everything is ready.
+    /// Builds the room and its starting look off the main thread. The
+    /// picture stays covered until the renderer draws the first frame.
     func load() async {
         guard phase == .loading, room == nil else { return }
         let layout = layout
+        let includesHallway = source.includesReferenceHallway
         let started = CACurrentMediaTime()
-        let built = await Task.detached(priority: .userInitiated) { () -> PreviewRoomScene in
-            let library = PreviewFinishLibrary()
+        let built = await Task.detached(priority: .userInitiated) { () -> (PreviewRoomScene, PreviewHallway?) in
+            let library = PreviewFinishLibrary(textureSize: 512)
             let room = PreviewRoomScene(layout: layout, library: library)
-            _ = library.materials(for: PreviewFinish.looks.map { PreviewFinish.Selection(lookID: $0.id) })
-            return room
+            return (room, includesHallway ? PreviewHallway(room: room) : nil)
         }.value
         readout.buildSeconds = CACurrentMediaTime() - started
-        prepareStarted = CACurrentMediaTime()
-        if let first = built.stops.first { stop = first.kind }
-        room = built
+        firstFrameStarted = CACurrentMediaTime()
+        if let first = built.0.stops.first { stop = first.kind }
+        hallway = built.1
+        room = built.0
+        lightStyle = built.0.lightStyle
+        mirrorStyle = built.0.mirrorStyle
     }
 
-    /// Everything the view should upload before the room is shown: the
-    /// scene and the materials of every look, so the first swap after the
-    /// room appears is as quick as any other.
-    var warmUpObjects: [Any] {
-        guard let room else { return [] }
-        return [room.scene] + room.library.materials(for: PreviewFinish.looks.map { PreviewFinish.Selection(lookID: $0.id) })
-    }
-
-    func didPrepare() {
+    func didRenderFirstFrame() {
         guard phase == .loading else { return }
-        readout.prepareSeconds = CACurrentMediaTime() - prepareStarted
+        readout.prepareSeconds = CACurrentMediaTime() - firstFrameStarted
         phase = .ready
         logger.info("Preview ready: build \(self.readout.buildSeconds ?? 0, format: .fixed(precision: 2)) s, prepare \(self.readout.prepareSeconds ?? 0, format: .fixed(precision: 2)) s")
     }
 
     // MARK: Finishes
 
-    func choose(look: PreviewFinish.Look) { show(PreviewFinish.Selection(lookID: look.id)) }
+    func choose(look: PreviewFinish.Look) {
+        var next = PreviewFinish.Selection(lookID: look.id)
+        next.overrides[.wetWall] = selection.overrides[.wetWall]
+        prepare(next)
+    }
+
+    func chooseLighting(_ style: PreviewBathroomLight, mirror: PreviewBathroomMirror) {
+        guard let room, phase == .ready else { return }
+        room.setBathroomLighting(style, mirror: mirror, clearanceConfirmed: vanityClearanceConfirmed)
+        lightStyle = room.lightStyle
+        mirrorStyle = room.mirrorStyle
+    }
 
     func choose(_ finish: PreviewFinish.Finish) {
         var next = selection
@@ -113,20 +130,38 @@ final class FinishedPreviewModel: ObservableObject {
         } else {
             next.overrides[finish.slot] = finish.id
         }
-        show(next)
+        prepare(next)
     }
 
-    /// Swaps materials and times the change from the tap to the first
-    /// frame that shows it.
-    private func show(_ next: PreviewFinish.Selection) {
+    func prepare(_ next: PreviewFinish.Selection) {
+        guard let room, phase == .ready else { return }
+        finishRequest?.cancel()
+        preparingFinish = false
+        guard next != selection else { return }
+        let library = room.library
+        let started = CACurrentMediaTime()
+        preparingFinish = true
+        finishRequest = Task {
+            await Task.detached(priority: .userInitiated) {
+                _ = library.materials(for: [next])
+            }.value
+            guard !Task.isCancelled else { return }
+            preparingFinish = false
+            show(next, preparationMilliseconds: (CACurrentMediaTime() - started) * 1000)
+        }
+    }
+
+    /// Reports the selection-to-frame time, including uncached texture work.
+    private func show(_ next: PreviewFinish.Selection, preparationMilliseconds: Double) {
         guard phase == .ready, let room, next != selection else { return }
         let state = signposter.beginInterval("FinishSwap")
         timing.beginSwap { [weak self] milliseconds in
             guard let self else { return }
             self.signposter.endInterval("FinishSwap", state)
-            self.readout.swapMilliseconds = milliseconds
+            let elapsed = preparationMilliseconds + milliseconds
+            self.readout.swapMilliseconds = elapsed
             self.readout.swaps += 1
-            self.logger.info("Finish swap \(milliseconds, format: .fixed(precision: 1)) ms")
+            self.logger.info("Finish swap \(elapsed, format: .fixed(precision: 1)) ms")
         }
         selection = next
         room.apply(next)
@@ -134,8 +169,26 @@ final class FinishedPreviewModel: ObservableObject {
 
     // MARK: Camera
 
+    func walkFromHallway() async {
+        guard phase == .ready, !hallwayPlaying, let room, let hallway else { return }
+        hallwayPlaying = true
+        defer { hallwayPlaying = false }
+        room.place(at: hallway.start)
+        try? await Task.sleep(for: .milliseconds(450))
+        guard !Task.isCancelled else { return }
+        let duration = 5.5
+        timing.beginGlide()
+        room.place(at: hallway.end, duration: duration)
+        try? await Task.sleep(for: .seconds(duration + 0.15))
+        let result = timing.endGlide()
+        stop = hallway.end.kind
+        readout.glideFrames = result.frames
+        readout.glideWorstMilliseconds = result.worst
+        readout.glideSlowFrames = result.slow
+    }
+
     func go(to kind: PreviewCamera.Kind) {
-        guard phase == .ready, let room, kind != stop,
+        guard phase == .ready, !hallwayPlaying, let room, kind != stop,
               let target = room.stops.first(where: { $0.kind == kind }) else { return }
         let from = room.currentStop
         stop = kind
@@ -216,12 +269,19 @@ final class FinishedPreviewModel: ObservableObject {
 /// Frame and swap timing gathered on the render thread.
 final class PreviewFrameTiming: NSObject, SCNSceneRendererDelegate {
     private struct State {
+        var firstFrame: (() -> Void)?
         var swapStarted: CFTimeInterval?
         var swapDone: ((Double) -> Void)?
         var glideStamps: [CFTimeInterval]?
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
+
+    func onFirstFrame(_ done: @escaping @MainActor () -> Void) {
+        state.withLock {
+            $0.firstFrame = { Task { @MainActor in done() } }
+        }
+    }
 
     func beginSwap(_ done: @escaping @MainActor (Double) -> Void) {
         state.withLock {
@@ -243,6 +303,11 @@ final class PreviewFrameTiming: NSObject, SCNSceneRendererDelegate {
 
     func renderer(_ renderer: SCNSceneRenderer, didRenderScene scene: SCNScene, atTime time: TimeInterval) {
         let now = CACurrentMediaTime()
+        let firstFrame = state.withLock { state in
+            defer { state.firstFrame = nil }
+            return state.firstFrame
+        }
+        firstFrame?()
         let finished = state.withLock { state -> (Double, ((Double) -> Void)?)? in
             state.glideStamps?.append(now)
             guard let started = state.swapStarted else { return nil }
@@ -275,12 +340,11 @@ private struct PreviewSceneView: UIViewRepresentable {
 
     func updateUIView(_ view: SCNView, context: Context) {
         guard let room = model.room, view.scene !== room.scene else { return }
-        view.scene = room.scene
-        view.pointOfView = room.cameraNode
-        let model = model
-        view.prepare(model.warmUpObjects) { _ in
-            Task { @MainActor in model.didPrepare() }
+        model.timing.onFirstFrame { [weak model] in
+            model?.didRenderFirstFrame()
         }
+        view.pointOfView = room.cameraNode
+        view.scene = room.scene
     }
 }
 
@@ -293,8 +357,11 @@ struct FinishedPreviewScreen: View {
     @State private var shared: FinishedPreviewModel.Picture?
     @State private var compared: [FinishedPreviewModel.Picture] = []
     @State private var showingComparison = false
+    @State private var finishOptions = BathroomFinishOptions()
+    @State private var bathroomComparison: BathroomComparison?
     @State private var working = false
     @State private var pictureFailed = false
+    @State private var showingClearanceConfirmation = false
     @State private var showingReadout = false
 
     init(source: FinishedPreviewSource) {
@@ -332,6 +399,30 @@ struct FinishedPreviewScreen: View {
                     Menu {
                         Button("Share This Picture", systemImage: "photo") { sharePicture() }
                         Button("Compare Looks", systemImage: "rectangle.split.2x1") { compareLooks() }
+                        if model.room?.shownFinishes[.wetWall] != nil {
+                            Section("Bathroom Options") {
+                                Button("Save Current as Option A") { saveBathroomOption(asA: true) }
+                                Button("Save Current as Option B") { saveBathroomOption(asA: false) }
+                                if let original = finishOptions.a, finishOptions.b == nil {
+                                    Button("Duplicate A as Option B") {
+                                        finishOptions.b = original
+                                        finishOptions.save(for: model.source.comparisonKey)
+                                        editBathroomOption(original)
+                                    }
+                                }
+                                if let a = finishOptions.a {
+                                    Button("Load Option A") { editBathroomOption(a) }
+                                }
+                                if let b = finishOptions.b {
+                                    Button("Load Option B") { editBathroomOption(b) }
+                                }
+                                Button("Compare Saved Options", systemImage: "rectangle.split.2x1") {
+                                    compareBathroomOptions()
+                                }
+                                .disabled(finishOptions.a == nil || finishOptions.b == nil)
+                            }
+                            .disabled(model.preparingFinish || model.hallwayPlaying)
+                        }
                     } label: {
                         if working { ProgressView() } else { Label("Share", systemImage: "square.and.arrow.up") }
                     }
@@ -340,6 +431,10 @@ struct FinishedPreviewScreen: View {
             }
         }
         .task { await model.load() }
+        .onAppear { finishOptions = BathroomFinishOptions.load(for: model.source.comparisonKey) }
+        .sheet(item: $bathroomComparison) { comparison in
+            BathroomComparisonSheet(comparison: comparison, source: model.source, useImperial: useImperial)
+        }
         .sheet(item: $shared) { picture in
             ExportPreviewSheet(title: "Finished Preview", url: picture.url) {
                 Image(uiImage: picture.image).resizable().scaledToFit().padding()
@@ -362,7 +457,7 @@ struct FinishedPreviewScreen: View {
                 .accessibilityElement()
                 .accessibilityLabel("Finished preview of \(model.source.roomName), \(model.lookName), \(model.stop.title) view")
             if model.phase == .loading {
-                ProgressView("Preparing both looks")
+                ProgressView("Preparing preview")
                     .tint(.white)
                     .foregroundStyle(.white)
             }
@@ -403,6 +498,14 @@ struct FinishedPreviewScreen: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
+                    if model.hallway != nil {
+                        Button {
+                            Task { await model.walkFromHallway() }
+                        } label: {
+                            Label(model.hallwayPlaying ? "Walking from hallway…" : "Walk from Hallway",
+                                  systemImage: "figure.walk")
+                        }
+                    }
                 }
             }
             Section("Look") {
@@ -414,10 +517,40 @@ struct FinishedPreviewScreen: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
             }
+            if let room = model.room, room.isBathroom {
+                Section("Bathroom Lighting") {
+                    Picker("Light Fixture", selection: Binding(get: { model.lightStyle }, set: {
+                        model.chooseLighting($0, mirror: model.mirrorStyle)
+                    })) {
+                        if room.vanityMount?.fitsLight == true &&
+                            (!room.vanityClearanceUncertain || model.vanityClearanceConfirmed) {
+                            Text(PreviewBathroomLight.vanity.rawValue).tag(PreviewBathroomLight.vanity)
+                        }
+                        Text(PreviewBathroomLight.ceiling.rawValue).tag(PreviewBathroomLight.ceiling)
+                        Text(PreviewBathroomLight.potLights.rawValue).tag(PreviewBathroomLight.potLights)
+                    }
+                    if room.vanityMount != nil {
+                        Picker("Mirror", selection: Binding(get: { model.mirrorStyle }, set: {
+                            model.chooseLighting(model.lightStyle, mirror: $0)
+                        })) {
+                            ForEach(PreviewBathroomMirror.allCases) { Text($0.rawValue).tag($0) }
+                        }
+                    }
+                    if room.vanityMount?.fitsLight == true && room.vanityClearanceUncertain &&
+                        !model.vanityClearanceConfirmed {
+                        Button("Confirm Above-Mirror Clearance") { showingClearanceConfirmation = true }
+                        Text("Verify at least 120 mm of clear space above the mirror, including under any bulkhead.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
             Section("Finishes") {
-                ForEach(PreviewFinish.Slot.choices, id: \.self) { slot in
+                if model.preparingFinish { ProgressView("Preparing finish") }
+                ForEach(PreviewFinish.Slot.choices.filter { model.room?.shownFinishes[$0] != nil }, id: \.self) { slot in
                     let current = model.selection.resolved[slot]
-                    Picker(slot.title, selection: Binding(get: { current ?? "" }, set: { id in
+                    let title = slot == .vanityCabinet && model.room?.isBathroom == false ? "Cabinets" : slot.title
+                    Picker(title, selection: Binding(get: { current ?? "" }, set: { id in
                         if let finish = PreviewFinish.finish(id) { model.choose(finish) }
                     })) {
                         ForEach(PreviewFinish.finishes(for: slot)) { Text($0.name).tag($0.id) }
@@ -434,7 +567,14 @@ struct FinishedPreviewScreen: View {
             .font(.footnote)
             .foregroundStyle(.secondary)
         }
-        .disabled(model.phase != .ready)
+        .disabled(model.phase != .ready || model.hallwayPlaying)
+        .confirmationDialog("Confirm vanity light clearance", isPresented: $showingClearanceConfirmation,
+                            titleVisibility: .visible) {
+            Button("Confirm 120 mm or More") { model.vanityClearanceConfirmed = true }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Confirm the clear height above the mirror, including below any bulkhead.")
+        }
     }
 
     private var blocked: some View {
@@ -457,6 +597,33 @@ struct FinishedPreviewScreen: View {
         Task {
             await Task.yield()
             if let picture = model.picture(useImperial: useImperial) { shared = picture } else { pictureFailed = true }
+            working = false
+        }
+    }
+
+    private func saveBathroomOption(asA: Bool) {
+        let option = BathroomFinishOption(selection: model.selection, light: model.lightStyle,
+                                          mirror: model.mirrorStyle,
+                                          clearanceConfirmed: model.vanityClearanceConfirmed)
+        if asA { finishOptions.a = option } else { finishOptions.b = option }
+        finishOptions.save(for: model.source.comparisonKey)
+    }
+
+    private func editBathroomOption(_ option: BathroomFinishOption) {
+        model.vanityClearanceConfirmed = option.clearanceConfirmed
+        model.chooseLighting(option.light, mirror: option.mirror)
+        model.prepare(option.selection)
+    }
+
+    private func compareBathroomOptions() {
+        guard let a = finishOptions.a, let b = finishOptions.b else { return }
+        working = true
+        let layout = model.layout
+        Task {
+            bathroomComparison = await Task.detached(priority: .userInitiated) {
+                BathroomComparison(layout: layout, a: a, b: b)
+            }.value
+            pictureFailed = bathroomComparison == nil
             working = false
         }
     }

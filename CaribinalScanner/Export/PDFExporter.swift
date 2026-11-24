@@ -812,6 +812,61 @@ enum PDFExporter {
     /// Distinct storey names in room order. More than one means the plan is
     /// rendered per floor — storeys overlap in plan space, so a single merged
     /// image would draw them on top of each other.
+    static func makeBathroomComparison(_ comparison: BathroomComparison, source: FinishedPreviewSource,
+                                       useImperial: Bool) throws -> URL {
+        let rooms = source.floorRooms.isEmpty ? [source.room] : source.floorRooms.map(\.room)
+        guard let plan = FloorPlanModel(rooms: rooms),
+              let planImage = renderPlanImage(plan: plan, labels: roomLabels(for: source.floorRooms, useImperial: useImperial),
+                                              markers: source.markers, layers: PlanLayers(),
+                                              useImperial: useImperial, side: 780, scale: 2) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let url = folder.appendingPathComponent("Bathroom Finish Comparison.pdf")
+        try UIGraphicsPDFRenderer(bounds: pageRect).writePDF(to: url) { context in
+            context.beginPage()
+            var y = drawText("Bathroom Finish Comparison", font: .boldSystemFont(ofSize: 25), color: accent, y: margin)
+            y = drawText(source.roomName, font: .boldSystemFont(ofSize: 15), y: y)
+            let revision = [source.revisionTitle, source.savedAt?.formatted(date: .abbreviated, time: .omitted)]
+                .compactMap { $0 }.joined(separator: " · ")
+            y = drawText(revision, font: .systemFont(ofSize: 11), y: y)
+            let planBox = CGRect(x: margin, y: y + 10, width: contentWidth, height: 480)
+            planImage.draw(in: aspectFit(imageSize: planImage.size, in: planBox))
+            y = drawText("Ceiling: \(Measure.height(source.room.ceilingHeightMeters, imperial: useImperial)). \(source.room.ceilingHeightSourceLabel).",
+                         font: .systemFont(ofSize: 11), y: planBox.maxY + 12)
+            if let notes = comparison.assumptions {
+                _ = drawText(notes, font: .systemFont(ofSize: 11), y: y)
+            }
+
+            context.beginPage()
+            y = drawText("Same Doorway, Two Options", font: .boldSystemFont(ofSize: 24), color: accent, y: margin)
+            y = drawText("Illustrations from the saved drawing. Confirm finishes with product samples.",
+                         font: .systemFont(ofSize: 11), y: y)
+            let width = (contentWidth - 16) / 2
+            for (index, picture) in comparison.pictures.enumerated() {
+                let x = margin + CGFloat(index) * (width + 16)
+                var row = y + 12
+                func columnText(_ text: String, size: CGFloat, bold: Bool = false) {
+                    let font: UIFont = bold ? .boldSystemFont(ofSize: size) : .systemFont(ofSize: size)
+                    let item = NSAttributedString(string: text, attributes: [.font: font, .foregroundColor: UIColor.black])
+                    let options: NSStringDrawingOptions = [.usesLineFragmentOrigin, .usesFontLeading]
+                    let bounds = item.boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                                                   options: options, context: nil)
+                    let height = ceil(bounds.height)
+                    item.draw(with: CGRect(x: x, y: row, width: width, height: height), options: options, context: nil)
+                    row += height + 8
+                }
+                columnText(picture.title, size: 16, bold: true)
+                let imageRect = CGRect(x: x, y: row, width: width, height: width / PreviewCamera.aspect)
+                picture.image.draw(in: aspectFit(imageSize: picture.image.size, in: imageRect))
+                row = imageRect.maxY + 16
+                for finish in picture.finishes { columnText(finish, size: 11) }
+            }
+        }
+        return url
+    }
+
     private static func orderedFloorNames(of entries: [RoomEntry]) -> [String] {
         var names: [String] = []
         for entry in entries where !names.contains(entry.floorDisplayName) {

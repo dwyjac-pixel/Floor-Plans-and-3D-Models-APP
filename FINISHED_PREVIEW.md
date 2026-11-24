@@ -220,3 +220,87 @@ sh Tests/render-preview-stills.sh out/     # both looks from every stop, on the 
 ```
 
 On a device: open a project, Plan History, Open Sample Bathroom. For your own room: open a proposed revision and tap Preview Renovation under the room. Tap the picture three times for timings.
+
+## Residential product priorities
+
+Focus on the residential workflow for Caribinal Creations, other contractors, and homeowners. A customer should be able to capture or draw a home, confirm the dimensions, open a connected walkthrough, and compare proposed finishes from the same saved drawing. Improve that flow before expanding into commercial spaces.
+
+Add a separate **Shower or Tub Surround** control. Default to a prefab surround and offer tile around either a shower or a bathtub. Keep this choice independent of the bathroom floor and general wall paint. Switching the surround should preserve the fixture footprint and update only the wet-area surfaces around the selected fixture. Test both fixture types and keep the selected surround with the saved proposal before mapping it to takeoff or pricing.
+
+The app is already listed on the App Store. A purchase price and the timing of that change are future owner decisions.
+
+For the reference floor, verify the hall to living room, bedroom, and bathroom route on iPhone and iPad. Check a floor-only change and a paint-only change in different rooms and confirm that adjoining room selections remain intact.
+
+## Bathroom lighting and phone performance
+
+Default to an above-mirror vanity light when the confirmed space above the mirror fits the fixture. Include any nearby bulkhead in the clearance check. For lower ceilings, offer a standard ceiling fixture or recessed pot lights, paired with either a plain mirror or a mirror with built-in lighting. When a scan leaves clearance uncertain, show the missing measurement and let the user confirm it before applying the above-mirror default.
+
+Keep the initial scene lightweight with a basic lighting setup. Load optional fixture previews when the user opens their choices, and reuse loaded assets when they switch options. Keep navigation and finish controls responsive while optional assets load.
+
+Verify on a physical iPhone 12 or another representative older supported iPhone, as well as the iPhone 15 Pro Max and iPad. Record the device and OS, then measure a cold app launch, time until the floor is visible and interactive, and time from a finish selection to the first frame showing it. Check the first flooring and paint swaps after the preview is ready and repeat them after the assets are warm. Verify that opening optional lighting choices leaves the preview and controls responsive. Record simulator results separately from physical device timings.
+
+## Bathroom hardware finishes
+
+The current preview uses a shared Hardware finish for the faucet and door
+lever. The Warm Modern look starts with brushed brass. Bright Neutral
+starts with polished chrome. Matte black is also available.
+
+Add separate Faucet and Room Door Handle controls. Offer matte black,
+polished chrome, and brushed brass in both so clients can match or mix
+them. Keep the starting finishes editable and use the look's current
+hardware finish as the fallback for older saved options. Save each choice
+with the room and with each saved comparison option.
+
+Verify that changing the faucet leaves the room door handle unchanged
+and vice versa. Check that both choices survive reopening the room and
+appear separately in the comparison and PDF.
+
+## Camera control after walkthrough stops
+
+The hallway-to-living-room transition ends with the camera facing a
+corner, leaving much of the room out of view. Give the user camera
+control after arriving. Let them drag to look around, pinch to zoom, and
+tap preset viewpoints that show the room from useful corners. Provide a
+Show Whole Room action for a wide view.
+
+On iPhone and iPad simulators, walk from the hallway into the living
+room. Verify that the user can inspect the full room from the arrival
+point and preset views, then continue to the next room without restarting
+the tour. Confirm that changing views and resuming the tour preserve the
+selected room finishes.
+
+Use a slightly slower default pace and ease into and out of movement and
+turns, especially at room entrances. Let users pause and resume the tour,
+choose the next room, or switch to manual exploration while retaining
+their tour position. Offer look-around, zoom-out, and Show Whole Room
+controls in the hallway as well as inside rooms.
+
+On both simulators, pause in the hallway, look around, and zoom out or
+switch to the wide view. Resume the tour, choose a room, and watch the
+doorway transition for abrupt movement or turns. Confirm that manual
+exploration preserves tour progress and all room finish selections.
+
+Keep corners readable in the walkthrough, starting with the bedroom.
+Evaluate soft fill light to lift deep shadows while keeping enough
+shading to show depth. Preserve crisp wall-to-wall and wall-to-floor
+edges so adjacent surfaces remain easy to distinguish.
+
+Check the bedroom from the wide view and corner viewpoints on the
+iPhone and iPad simulators. Compare edge clarity and shadow detail
+before and after, and measure frame pacing during movement and turns
+to catch rendering regressions.
+
+## Kitchen rendering and fixture editing
+
+Render the kitchen from the confirmed drawing. Show cabinet doors,
+drawers, and handles, plus countertops, the sink and faucet, stove,
+microwave, and other appliances present. Keep edges crisp and use the
+saved fixture positions and orientations. Let users add missed items or
+reposition and rotate items in the plan, then see those edits in the
+walkthrough.
+
+On iPhone and iPad simulators, check that the wide view shows the full
+kitchen layout and that cabinet hardware, countertop edges, and fixtures
+remain clear up close. Move one appliance and add a missing item, then
+reopen the preview to verify the saved positions. Measure loading and
+frame pacing during doorway transitions and close-up navigation.

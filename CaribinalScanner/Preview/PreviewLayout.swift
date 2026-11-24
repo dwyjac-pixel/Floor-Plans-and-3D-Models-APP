@@ -140,7 +140,7 @@ struct PreviewLayout {
     static let defaultBulkheadDrop = 0.4
     /// Fixtures this release draws as finished models. Anything else is a
     /// plain block and is listed as such.
-    static let detailedKinds: Set<CornerRoom.Fixture.Kind> = [.vanity, .toilet, .shower, .bulkhead]
+    static let detailedKinds: Set<CornerRoom.Fixture.Kind> = [.vanity, .toilet, .shower, .tubShower, .bulkhead, .baseCabinets, .upperCabinets, .shortUpperCabinet, .island, .fridge, .stove, .kitchenSink, .microwave, .dishwasher]
 
     /// Plan-space point that became the scene origin.
     let origin: Point
@@ -270,9 +270,16 @@ struct PreviewLayout {
             let depth = solid.corners.map { contains($0) ? 0 : clearance(from: $0) }.max() ?? 0
             if depth > Self.fitTolerance { late.append(.fixtureThroughWall(solid.id, depth: depth)) }
         }
-        let standing = solids.filter { $0.kind != .bulkhead && $0.kind != .upperCabinets }
-        for (index, a) in standing.enumerated() {
-            for b in standing.dropFirst(index + 1) where Self.overlap(a, b) > Self.fitTolerance {
+        func heightBand(_ solid: Solid) -> Int {
+            switch solid.kind {
+            case .bulkhead: 2
+            case .microwave, .upperCabinets, .shortUpperCabinet: 1
+            default: 0
+            }
+        }
+        for (index, a) in solids.enumerated() where heightBand(a) != 2 {
+            for b in solids.dropFirst(index + 1) where heightBand(a) == heightBand(b) && Self.overlap(a, b) > Self.fitTolerance {
+                if Set([a.kind, b.kind]) == [.shortUpperCabinet, .microwave] { continue }
                 late.append(.fixturesOverlap(a.id, b.id))
             }
         }

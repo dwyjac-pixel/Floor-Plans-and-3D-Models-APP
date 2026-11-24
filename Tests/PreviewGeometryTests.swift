@@ -354,9 +354,11 @@ struct PreviewGeometryTests {
         for text in PreviewFinish.catalog.map(\.name) + PreviewFinish.looks.map(\.name) {
             expect(!text.contains("\u{2014}") && !text.contains("\u{2013}"), "no dashes in \(text)")
         }
-        // Looks differ in every slot a client can see change.
         let a = PreviewFinish.looks[0].finishes, b = PreviewFinish.looks[1].finishes
-        for slot in PreviewFinish.Slot.choices { expect(a[slot] != b[slot], "looks differ in \(slot.rawValue)") }
+        expect(a[.wetWall] == "wet.prefab" && b[.wetWall] == "wet.prefab", "both looks start with a prefab surround")
+        for slot in PreviewFinish.Slot.choices where slot != .wetWall {
+            expect(a[slot] != b[slot], "looks differ in \(slot.rawValue)")
+        }
 
         // A changed slot overrides the look; a wrong or unknown id does not.
         var selection = PreviewFinish.Selection(lookID: "warm-modern")

@@ -9,6 +9,8 @@ struct PlanHistoryScreen: View {
     @State private var revisionName = ""
     @State private var saveError: String?
     @State private var showingSamplePreview = false
+    @State private var showingSampleFloor = false
+    @State private var showingSampleKitchen = false
 
     init(history: PlanHistory, project: RenovationProject, onSave: @escaping (PlanHistory) -> Void) {
         _history = State(initialValue: history)
@@ -37,6 +39,8 @@ struct PlanHistoryScreen: View {
             }
             Section("Preview Renovation") {
                 Button("Open Sample Bathroom", systemImage: "shower") { showingSamplePreview = true }
+                Button("Open Sample Kitchen", systemImage: "stove") { showingSampleKitchen = true }
+                Button("Open Sample Floor", systemImage: "square.split.2x2") { showingSampleFloor = true }
                 Text("See a finished room drawn from a plan. To preview your own, open a proposed revision and choose a room.")
                     .foregroundStyle(.secondary)
             }
@@ -45,6 +49,12 @@ struct PlanHistoryScreen: View {
         .fullScreenCover(isPresented: $showingSamplePreview) {
             FinishedPreviewScreen(source: .sample)
         }
+        .fullScreenCover(isPresented: $showingSampleKitchen) {
+            FinishedPreviewScreen(source: FinishedPreviewSource(room: PreviewReferenceKitchen.room(),
+                                                                roomName: "Sample kitchen", revisionTitle: "Sample drawing",
+                                                                savedAt: nil))
+        }
+        .fullScreenCover(isPresented: $showingSampleFloor) { ReferenceFloorScreen() }
         .sheet(isPresented: $showingSaveRevision) {
             NavigationStack {
                 Form {
@@ -106,6 +116,7 @@ struct PlanSnapshotScreen: View {
     @State private var exportFailed = false
     @State private var measurementExport: MeasurementExport?
     @State private var previewRoom: RoomEntry?
+    @State private var showingSavedWalkthrough = false
 
     private var floors: [String] {
         Array(Set(snapshot.rooms.map(\.floorDisplayName))).sorted()
@@ -129,6 +140,11 @@ struct PlanSnapshotScreen: View {
                     FloorPlanCanvas(plan: plan, useImperial: useImperial, markers: snapshot.markers.markers)
                         .frame(height: 340)
                         .accessibilityLabel("Saved floor plan")
+                    if rooms.count > 1 {
+                        Button("Walk Through Saved Floor", systemImage: "figure.walk") {
+                            showingSavedWalkthrough = true
+                        }
+                    }
                     Button("View 3D Model", systemImage: "cube") { showingModel = true }
                     Button("Export Plan Image", systemImage: "square.and.arrow.up") { exportImage(plan) }
                 }
@@ -165,9 +181,14 @@ struct PlanSnapshotScreen: View {
         .sheet(isPresented: $showingModel) {
             Model3DScreen(project: project, snapshotRooms: rooms, title: title)
         }
+        .fullScreenCover(isPresented: $showingSavedWalkthrough) {
+            ReferenceFloorScreen(savedRooms: rooms, finishKey: "walkthrough.saved.\(snapshot.id).\(floor ?? "")")
+        }
         .fullScreenCover(item: $previewRoom) { entry in
             FinishedPreviewScreen(source: FinishedPreviewSource(room: entry.room, roomName: entry.name,
-                                                                revisionTitle: snapshot.title, savedAt: snapshot.savedAt))
+                                                                revisionTitle: snapshot.title, savedAt: snapshot.savedAt,
+                                                                comparisonKey: "\(snapshot.id).\(entry.id)",
+                                                                floorRooms: rooms, markers: snapshot.markers.markers))
         }
         .sheet(item: $export) { file in
             ExportPreviewSheet(title: title, url: file.url) {

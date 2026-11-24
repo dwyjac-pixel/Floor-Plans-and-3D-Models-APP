@@ -100,9 +100,13 @@ struct CornerRoom: Codable {
         enum Kind: String, Codable, CaseIterable, Identifiable {
             case baseCabinets = "Base Cabinets & Countertop"
             case upperCabinets = "Upper Cabinets"
+            case shortUpperCabinet = "Short Upper Cabinet"
             case island = "Island & Countertop"
             case fridge = "Refrigerator"
             case stove = "Stove"
+            case kitchenSink = "Kitchen Sink Cabinet"
+            case microwave = "Wall-Mounted Microwave"
+            case dishwasher = "Dishwasher"
             case toilet = "Toilet"
             case vanity = "Vanity"
             case tubShower = "Tub / Shower"
@@ -131,7 +135,7 @@ struct CornerRoom: Codable {
 
             var category: Category {
                 switch self {
-                case .baseCabinets, .upperCabinets, .island, .fridge, .stove: .kitchen
+                case .baseCabinets, .upperCabinets, .shortUpperCabinet, .island, .fridge, .stove, .kitchenSink, .microwave, .dishwasher: .kitchen
                 case .toilet, .vanity, .tubShower, .shower: .bathroom
                 case .bedQueen, .bedSingle, .dresser, .sofa: .bedroomLiving
                 case .washer, .dryer, .furnace, .waterHeater, .stairs, .bulkhead: .utility
@@ -140,10 +144,13 @@ struct CornerRoom: Codable {
 
             var sfSymbol: String {
                 switch self {
-                case .baseCabinets, .upperCabinets, .dresser: "cabinet"
+                case .baseCabinets, .upperCabinets, .shortUpperCabinet, .dresser: "cabinet"
                 case .island: "table.furniture"
                 case .fridge: "refrigerator"
                 case .stove: "stove"
+                case .kitchenSink: "sink"
+                case .microwave: "microwave"
+                case .dishwasher: "dishwasher"
                 case .toilet: "toilet"
                 case .vanity: "sink"
                 case .tubShower: "bathtub"
@@ -163,9 +170,13 @@ struct CornerRoom: Codable {
                 switch self {
                 case .baseCabinets: "Cabinets"
                 case .upperCabinets: "Uppers"
+                case .shortUpperCabinet: "Short upper"
                 case .island: "Island"
                 case .fridge: "Fridge"
                 case .stove: "Stove"
+                case .kitchenSink: "Sink"
+                case .microwave: "Microwave"
+                case .dishwasher: "Dishwasher"
                 case .toilet: "WC"
                 case .vanity: "Vanity"
                 case .tubShower: "Tub"
@@ -186,9 +197,13 @@ struct CornerRoom: Codable {
                 switch self {
                 case .baseCabinets: (2.4, 0.61)
                 case .upperCabinets: (2.4, 0.33)
+                case .shortUpperCabinet: (0.76, 0.33)
                 case .island: (1.8, 0.91)
                 case .fridge: (0.91, 0.76)
                 case .stove: (0.76, 0.66)
+                case .kitchenSink: (0.90, 0.61)
+                case .microwave: (0.76, 0.40)
+                case .dishwasher: (0.60, 0.61)
                 case .toilet: (0.5, 0.71)
                 case .vanity: (0.9, 0.55)
                 case .tubShower: (1.52, 0.76)
