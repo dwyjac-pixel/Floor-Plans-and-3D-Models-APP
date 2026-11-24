@@ -52,36 +52,31 @@ extension PreviewRoomScene {
                                    (!vanityClearanceUncertain || clearanceConfirmed)) else { return }
         lightStyle = style
         mirrorStyle = mirror
-        potLights.isHidden = style != .potLights
+        // The calibrated ceiling spots light the room for every choice, so
+        // a floor or a paint always looks the same whichever fixture is
+        // picked and two options are compared under one light. The choice
+        // changes which fixtures are drawn. It adds no light of its own:
+        // an extra bulb close to a wall burns it to white.
+        potLights.isHidden = false
         potFixtures.isHidden = style != .potLights
         optionalLights.childNodes.forEach { $0.removeFromParentNode() }
         scene.rootNode.childNode(withName: "vanity-lighting", recursively: false)?.removeFromParentNode()
 
-        func fixture(_ shape: SCNGeometry, at position: V3, in parent: SCNNode) {
+        func fixture(_ shape: SCNGeometry, at position: V3, in parent: SCNNode, finish: String = "fixed.lamp") {
             let node = SCNNode(geometry: shape)
-            shape.firstMaterial = library.material("fixed.lamp")
+            shape.firstMaterial = library.material(finish)
             node.simdPosition = position
             node.castsShadow = false
             parent.addChildNode(node)
         }
 
-        func glow(at position: V3, in parent: SCNNode, intensity: CGFloat) {
-            let node = SCNNode()
-            let light = SCNLight()
-            light.type = .omni
-            light.intensity = intensity
-            light.attenuationStartDistance = 0.25
-            light.attenuationEndDistance = 2
-            light.castsShadow = false
-            node.light = light
-            node.simdPosition = position
-            parent.addChildNode(node)
-        }
-
-        if style == .ceiling, let point = lampPoints.first {
+        if style == .ceiling, let point = centralLampPoint {
+            // A flush drum: a lit lens on a slim dark base, so it reads
+            // against a white ceiling.
+            fixture(SCNCylinder(radius: 0.155, height: 0.012),
+                    at: v(point, layout.ceilingHeight - 0.007), in: optionalLights, finish: "fixed.shadow-gap")
             fixture(SCNCylinder(radius: 0.145, height: 0.045),
-                    at: v(point, layout.ceilingHeight - 0.024), in: optionalLights)
-            glow(at: v(point, layout.ceilingHeight - 0.09), in: optionalLights, intensity: 7)
+                    at: v(point, layout.ceilingHeight - 0.035), in: optionalLights)
         }
 
         guard let mount = vanityMount, style == .vanity || mirror == .lighted else { return }
@@ -93,7 +88,6 @@ extension PreviewRoomScene {
         if style == .vanity {
             fixture(SCNBox(width: CGFloat(mount.width * 0.84), height: 0.06, length: 0.045, chamferRadius: 0.012),
                     at: V3(0, mount.top + 0.07, front), in: group)
-            glow(at: V3(0, mount.top + 0.04, front + 0.07), in: group, intensity: 5)
         }
         if mirror == .lighted {
             for side: Float in [-1, 1] {
@@ -101,7 +95,28 @@ extension PreviewRoomScene {
                                length: 0.006, chamferRadius: 0.003),
                         at: V3(side * (mount.width / 2 - 0.034), (mount.top + mount.bottom) / 2, front), in: group)
             }
-            glow(at: V3(0, (mount.top + mount.bottom) / 2, front + 0.08), in: group, intensity: 4)
         }
+    }
+
+    /// The ceiling light position nearest the middle of the room.
+    var centralLampPoint: PreviewLayout.Point? {
+        let xs = layout.floor.map(\.x), zs = layout.floor.map(\.z)
+        let centre = PreviewLayout.Point(x: ((xs.min() ?? 0) + (xs.max() ?? 0)) / 2, z: ((zs.min() ?? 0) + (zs.max() ?? 0)) / 2)
+        return lampPoints.min { ($0 - centre).length < ($1 - centre).length }
+    }
+
+    /// Lights that are on right now: not hidden, and under no hidden node.
+    var activeLights: [SCNLight] {
+        var lights: [SCNLight] = []
+        scene.rootNode.enumerateHierarchy { node, _ in
+            guard let light = node.light else { return }
+            var ancestor: SCNNode? = node
+            while let current = ancestor {
+                if current.isHidden { return }
+                ancestor = current.parent
+            }
+            lights.append(light)
+        }
+        return lights
     }
 }

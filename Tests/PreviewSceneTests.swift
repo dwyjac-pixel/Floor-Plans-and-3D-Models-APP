@@ -181,13 +181,19 @@ struct PreviewSceneTests {
             }
         }
         expect(room.lampPoints.count >= 1 && room.lampPoints.count <= 3, "one to three ceiling lights")
-        var shadowCasters = 0, lights = 0
-        room.scene.rootNode.enumerateHierarchy { node, _ in
-            guard let light = node.light else { return }
-            lights += 1
-            if light.castsShadow { shadowCasters += 1 }
+        // The light budget holds for every light and mirror choice: one
+        // shadow caster and at most four others, counting only lights
+        // that are switched on.
+        let startLight = room.lightStyle, startMirror = room.mirrorStyle
+        for style in PreviewBathroomLight.allCases {
+            for mirror in PreviewBathroomMirror.allCases {
+                room.setBathroomLighting(style, mirror: mirror, clearanceConfirmed: true)
+                let lights = room.activeLights
+                expect(lights.filter(\.castsShadow).count == 1 && lights.count <= 5,
+                       "\(style.rawValue) with \(mirror.rawValue): one shadow caster, five lights at most (found \(lights.count))")
+            }
         }
-        expect(shadowCasters == 1 && lights <= 5, "one shadow casting light, five lights at most (found \(lights))")
+        room.setBathroomLighting(startLight, mirror: startMirror, clearanceConfirmed: true)
     }
 
     // MARK: B1 to B3, a swap changes materials and nothing else
@@ -318,7 +324,28 @@ struct PreviewSceneTests {
         }
         let total = Double(a.count / 4)
         expect(Double(dark) / total < 0.2, "picture is not mostly black")
-        expect(Double(blown) / total < 0.25, "picture is not blown out (\(Int(Double(blown) / total * 100)) percent at white)")
+        expect(Double(blown) / total < 0.02, "picture is not blown out (\(Int(Double(blown) / total * 100)) percent at white)")
+        // Whites keep their shape under every light and mirror choice,
+        // from both standing views and in both looks.
+        let startLight = room.lightStyle, startMirror = room.mirrorStyle
+        for look in [warm, bright] {
+            room.apply(look)
+            for style in PreviewBathroomLight.allCases {
+                for mirror in PreviewBathroomMirror.allCases {
+                    room.setBathroomLighting(style, mirror: mirror, clearanceConfirmed: true)
+                    for stop in room.stops where stop.kind != .overhead {
+                        guard let still = PreviewStill.render(room, from: stop, width: 360) else { continue }
+                        let p = pixels(still)
+                        var white = 0
+                        for i in stride(from: 0, to: p.count, by: 4) where min(p[i], p[i + 1], p[i + 2]) > 250 { white += 1 }
+                        let share = Double(white) / Double(p.count / 4)
+                        expect(share < 0.02, "\(room.lightStyle.rawValue), \(mirror.rawValue), \(stop.kind.rawValue): \(String(format: "%.1f", share * 100)) percent of the picture is pure white")
+                    }
+                }
+            }
+        }
+        room.setBathroomLighting(startLight, mirror: startMirror, clearanceConfirmed: true)
+        room.apply(warm)
         let lines = PreviewCaption.lines(revisionTitle: "Test", savedAt: nil, roomName: "Bathroom", look: "Warm Modern",
                                          layout: room.layout, useImperial: true)
         let captioned = PreviewStill.captioned(first, lines: lines)

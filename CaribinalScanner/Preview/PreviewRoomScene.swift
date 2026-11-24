@@ -366,6 +366,15 @@ final class PreviewRoomScene {
 
     private func buildCamera() {
         let camera = SCNCamera()
+        Self.configure(camera)
+        cameraNode.name = "preview-camera"
+        cameraNode.camera = camera
+        scene.rootNode.addChildNode(cameraNode)
+    }
+
+    /// Exposure and shading for every preview camera, so a single room and
+    /// a whole floor show the same finish the same way.
+    static func configure(_ camera: SCNCamera) {
         camera.projectionDirection = .horizontal
         camera.zNear = 0.05
         camera.zFar = 60
@@ -376,17 +385,17 @@ final class PreviewRoomScene {
         camera.wantsExposureAdaptation = false
         camera.exposureOffset = 0
         camera.whitePoint = 1
+        // A tight radius: a crisp contact line where a fixture meets a
+        // wall or the floor. A wide one greys whole walls, frames flat
+        // panels in soot and turns chrome black.
         camera.screenSpaceAmbientOcclusionIntensity = 0.6
-        camera.screenSpaceAmbientOcclusionRadius = 0.16
+        camera.screenSpaceAmbientOcclusionRadius = 0.04
         camera.screenSpaceAmbientOcclusionBias = 0.02
         camera.screenSpaceAmbientOcclusionDepthThreshold = 0.2
         camera.screenSpaceAmbientOcclusionNormalThreshold = 0.3
         camera.bloomThreshold = 0.95
         camera.bloomIntensity = 0.12
         camera.bloomBlurRadius = 6
-        cameraNode.name = "preview-camera"
-        cameraNode.camera = camera
-        scene.rootNode.addChildNode(cameraNode)
     }
 
     static func orientation(headingDegrees: Double, pitchDegrees: Double) -> simd_quatf {
