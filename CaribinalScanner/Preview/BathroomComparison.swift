@@ -8,20 +8,34 @@ struct BathroomFinishOption: Codable {
     let clearanceConfirmed: Bool
 }
 
+extension BathroomFinishOption {
+    private enum CodingKeys: String, CodingKey {
+        case selection, light, mirror, clearanceConfirmed
+    }
+
+    // A choice this build does not know falls back to a default. It never
+    // costs the rest of the saved option.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(selection: (try? container.decode(PreviewFinish.Selection.self, forKey: .selection)) ?? .init(),
+                  light: (try? container.decode(PreviewBathroomLight.self, forKey: .light)) ?? .potLights,
+                  mirror: (try? container.decode(PreviewBathroomMirror.self, forKey: .mirror)) ?? .plain,
+                  clearanceConfirmed: (try? container.decode(Bool.self, forKey: .clearanceConfirmed)) ?? false)
+    }
+}
+
 struct BathroomFinishOptions: Codable {
     var a: BathroomFinishOption?
     var b: BathroomFinishOption?
+    /// What the room was showing when it was last open.
+    var current: BathroomFinishOption?
 
-    static func load(for key: String) -> Self {
-        guard let data = UserDefaults.standard.data(forKey: "bathroom-options.\(key)"),
-              let options = try? JSONDecoder().decode(Self.self, from: data) else { return Self() }
-        return options
+    static func load(from store: PreviewChoiceStore, key: String) -> Self {
+        store.value(Self.self, for: "room.\(key)") ?? Self()
     }
 
-    func save(for key: String) {
-        if let data = try? JSONEncoder().encode(self) {
-            UserDefaults.standard.set(data, forKey: "bathroom-options.\(key)")
-        }
+    func save(to store: PreviewChoiceStore, key: String) {
+        store.set(self, for: "room.\(key)")
     }
 }
 

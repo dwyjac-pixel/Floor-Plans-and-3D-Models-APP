@@ -6,6 +6,28 @@ enum PreviewBathroomLight: String, CaseIterable, Identifiable, Codable {
     case potLights = "Pot Lights"
 
     var id: Self { self }
+
+    /// The name written to disk. It never changes, so the title can.
+    var key: String {
+        switch self {
+        case .vanity: "vanity"
+        case .ceiling: "ceiling"
+        case .potLights: "pot-lights"
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        guard let match = Self.allCases.first(where: { $0.key == text || $0.rawValue == text }) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown light"))
+        }
+        self = match
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(key)
+    }
 }
 
 enum PreviewBathroomMirror: String, CaseIterable, Identifiable, Codable {
@@ -13,6 +35,21 @@ enum PreviewBathroomMirror: String, CaseIterable, Identifiable, Codable {
     case lighted = "Lighted Mirror"
 
     var id: Self { self }
+
+    var key: String { self == .plain ? "plain" : "lighted" }
+
+    init(from decoder: Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        guard let match = Self.allCases.first(where: { $0.key == text || $0.rawValue == text }) else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Unknown mirror"))
+        }
+        self = match
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(key)
+    }
 }
 
 struct PreviewVanityMount {

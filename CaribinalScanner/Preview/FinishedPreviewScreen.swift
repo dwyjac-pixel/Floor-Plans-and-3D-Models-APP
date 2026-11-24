@@ -11,6 +11,8 @@ struct FinishedPreviewSource {
     let savedAt: Date?
     var includesReferenceHallway = false
     var comparisonKey = "sample-bathroom"
+    /// Where this room's choices are kept. The samples keep theirs for the visit only.
+    var store = PreviewChoiceStore.sample
     var floorRooms: [RoomEntry] = []
     var markers: [PlanMarkers.Marker] = []
 
@@ -399,14 +401,14 @@ struct FinishedPreviewScreen: View {
                     Menu {
                         Button("Share This Picture", systemImage: "photo") { sharePicture() }
                         Button("Compare Looks", systemImage: "rectangle.split.2x1") { compareLooks() }
-                        if model.room?.shownFinishes[.wetWall] != nil {
+                        if model.room?.isBathroom == true {
                             Section("Bathroom Options") {
                                 Button("Save Current as Option A") { saveBathroomOption(asA: true) }
                                 Button("Save Current as Option B") { saveBathroomOption(asA: false) }
                                 if let original = finishOptions.a, finishOptions.b == nil {
                                     Button("Duplicate A as Option B") {
                                         finishOptions.b = original
-                                        finishOptions.save(for: model.source.comparisonKey)
+                                        finishOptions.save(to: model.source.store, key: model.source.comparisonKey)
                                         editBathroomOption(original)
                                     }
                                 }
@@ -431,7 +433,14 @@ struct FinishedPreviewScreen: View {
             }
         }
         .task { await model.load() }
-        .onAppear { finishOptions = BathroomFinishOptions.load(for: model.source.comparisonKey) }
+        .onAppear { finishOptions = BathroomFinishOptions.load(from: model.source.store, key: model.source.comparisonKey) }
+        // The room reopens the way it was left, and remembers every change.
+        .onChange(of: model.phase) { _, phase in
+            if phase == .ready, let last = finishOptions.current { editBathroomOption(last) }
+        }
+        .onChange(of: model.selection) { _, _ in rememberCurrent() }
+        .onChange(of: model.lightStyle) { _, _ in rememberCurrent() }
+        .onChange(of: model.mirrorStyle) { _, _ in rememberCurrent() }
         .sheet(item: $bathroomComparison) { comparison in
             BathroomComparisonSheet(comparison: comparison, source: model.source, useImperial: useImperial)
         }
@@ -606,7 +615,15 @@ struct FinishedPreviewScreen: View {
                                           mirror: model.mirrorStyle,
                                           clearanceConfirmed: model.vanityClearanceConfirmed)
         if asA { finishOptions.a = option } else { finishOptions.b = option }
-        finishOptions.save(for: model.source.comparisonKey)
+        finishOptions.save(to: model.source.store, key: model.source.comparisonKey)
+    }
+
+    private func rememberCurrent() {
+        guard model.phase == .ready else { return }
+        finishOptions.current = BathroomFinishOption(selection: model.selection, light: model.lightStyle,
+                                                     mirror: model.mirrorStyle,
+                                                     clearanceConfirmed: model.vanityClearanceConfirmed)
+        finishOptions.save(to: model.source.store, key: model.source.comparisonKey)
     }
 
     private func editBathroomOption(_ option: BathroomFinishOption) {

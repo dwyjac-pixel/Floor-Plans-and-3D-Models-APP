@@ -3231,7 +3231,7 @@ struct FixtureCatalogSheet: View {
             List {
                 ForEach(CornerRoom.Fixture.Kind.Category.allCases) { category in
                     Section(category.rawValue) {
-                        ForEach(CornerRoom.Fixture.Kind.allCases.filter { $0.category == category }) { kind in
+                        ForEach(CornerRoom.Fixture.Kind.placeable.filter { $0.category == category }) { kind in
                             Button {
                                 onPick(kind)
                                 dismiss()

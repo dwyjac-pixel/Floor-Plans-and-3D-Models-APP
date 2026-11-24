@@ -142,6 +142,28 @@ enum PreviewFinish {
         }
 
         var look: Look { PreviewFinish.looks.first { $0.id == lookID } ?? PreviewFinish.looks[0] }
+
+        private enum CodingKeys: String, CodingKey {
+            case lookID, overrides
+        }
+
+        // Saved by slot name, so a slot added or renamed later is skipped
+        // on reading and never costs the rest of a saved choice.
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            lookID = (try? container.decode(String.self, forKey: .lookID)) ?? PreviewFinish.looks[0].id
+            overrides = [:]
+            for (name, id) in (try? container.decode([String: String].self, forKey: .overrides)) ?? [:] {
+                if let slot = Slot(rawValue: name) { overrides[slot] = id }
+            }
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(lookID, forKey: .lookID)
+            try container.encode(Dictionary(uniqueKeysWithValues: overrides.map { ($0.key.rawValue, $0.value) }),
+                                 forKey: .overrides)
+        }
     }
 
     static func finish(_ id: String) -> Finish? { catalog.first { $0.id == id } }
@@ -178,13 +200,13 @@ enum PreviewFinish {
         Finish(id: "wall.sage", slot: .wall, name: "Muted sage paint",
                surface: .paint(hex: "C3CCBC", roughness: 0.9)),
         // Vanity
-        Finish(id: "vanity.walnut", slot: .vanityCabinet, name: "Walnut flat panel vanity",
+        Finish(id: "vanity.walnut", slot: .vanityCabinet, name: "Walnut flat panel",
                surface: .wood(Wood(hex: "7A5639", grainHex: "4C3221", roughness: 0.5, vertical: false))),
-        Finish(id: "vanity.white", slot: .vanityCabinet, name: "White painted vanity",
+        Finish(id: "vanity.white", slot: .vanityCabinet, name: "White painted",
                surface: .paint(hex: "F2F1EE", roughness: 0.45)),
-        Finish(id: "vanity.oak", slot: .vanityCabinet, name: "Natural oak flat panel vanity",
+        Finish(id: "vanity.oak", slot: .vanityCabinet, name: "Natural oak flat panel",
                surface: .wood(Wood(hex: "C2A27C", grainHex: "A38561", roughness: 0.55, vertical: false))),
-        Finish(id: "vanity.navy", slot: .vanityCabinet, name: "Navy painted vanity",
+        Finish(id: "vanity.navy", slot: .vanityCabinet, name: "Navy painted",
                surface: .paint(hex: "2F3D52", roughness: 0.45)),
         // Counter
         Finish(id: "top.white-quartz", slot: .vanityTop, name: "White quartz counter",

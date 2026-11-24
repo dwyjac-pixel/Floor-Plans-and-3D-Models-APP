@@ -48,6 +48,7 @@ struct PreviewSceneTests {
         swapsChangeOnlyMaterials(room)
         cameraConventions(room)
         pictures(room)
+        savedChoices()
         bathroomOptions(room)
         kitchenFixtures()
         if failures > 0 {
@@ -267,6 +268,42 @@ struct PreviewSceneTests {
             expect(room.overheadHidden.isHidden, "ceiling steps aside from overhead")
             room.place(at: room.stops[0])
         }
+    }
+
+    // MARK: Saved choices outlive a renamed slot or a reworded label
+
+    static func savedChoices() {
+        let stored = #"{"lookID":"bright-neutral","overrides":{"floor":"floor.charcoal-24x24","retired":"x"}}"#
+        if let back = try? JSONDecoder().decode(PreviewFinish.Selection.self, from: Data(stored.utf8)) {
+            expect(back.lookID == "bright-neutral" && back.overrides == [.floor: "floor.charcoal-24x24"],
+                   "a slot this build does not know is skipped and the rest is kept")
+        } else {
+            expect(false, "a selection with an unknown slot does not read")
+        }
+        let selection = PreviewFinish.Selection(lookID: "warm-modern", overrides: [.wall: "wall.sage"])
+        let written = (try? JSONEncoder().encode(selection)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        expect(written.contains(#""wall":"wall.sage""#), "overrides are saved by slot name: \(written)")
+        expect((try? JSONDecoder().decode(PreviewFinish.Selection.self, from: Data(written.utf8))) == selection, "selection round trips")
+        func text<T: Encodable>(_ value: T) -> String {
+            (try? JSONEncoder().encode([value])).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+        }
+        for light in PreviewBathroomLight.allCases {
+            let byKey = try? JSONDecoder().decode([PreviewBathroomLight].self, from: Data("[\"\(light.key)\"]".utf8))
+            let byTitle = try? JSONDecoder().decode([PreviewBathroomLight].self, from: Data("[\"\(light.rawValue)\"]".utf8))
+            expect(byKey == [light] && byTitle == [light], "\(light.key) reads by its key and by its title")
+            expect(text(light) == "[\"\(light.key)\"]", "\(light.key) is saved by its key, not its title")
+        }
+        for mirror in PreviewBathroomMirror.allCases {
+            let byKey = try? JSONDecoder().decode([PreviewBathroomMirror].self, from: Data("[\"\(mirror.key)\"]".utf8))
+            expect(byKey == [mirror] && text(mirror) == "[\"\(mirror.key)\"]", "\(mirror.key) mirror is saved by its key")
+        }
+        expect((try? JSONDecoder().decode([PreviewBathroomLight].self, from: Data("[\"Chandelier\"]".utf8))) == nil,
+               "an unknown light is refused, so the caller can fall back")
+        // The four kitchen kinds stay out of the plan editor until an older
+        // version can no longer drop them from a saved room.
+        let held: [CornerRoom.Fixture.Kind] = [.shortUpperCabinet, .kitchenSink, .microwave, .dishwasher]
+        expect(held.allSatisfy { !CornerRoom.Fixture.Kind.placeable.contains($0) }, "new kitchen kinds are not offered in the editor")
+        expect(CornerRoom.Fixture.Kind.placeable.count == CornerRoom.Fixture.Kind.allCases.count - 4, "every other kind is still offered")
     }
 
     // MARK: Stills

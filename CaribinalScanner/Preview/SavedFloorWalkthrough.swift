@@ -17,6 +17,8 @@ protocol FloorWalkthroughScene: AnyObject {
     var walkthroughRooms: [WalkthroughRoom] { get }
     var walkthroughLegs: [WalkthroughLeg] { get }
     var connectionMessage: String? { get }
+    /// Every dimension a default stood in for, across the rooms shown.
+    var assumptions: [PreviewLayout.Assumption] { get }
     func finishID(_ slot: PreviewFinish.Slot, roomID: String) -> String?
     func change(_ finish: PreviewFinish.Finish, roomID: String)
 }
@@ -41,6 +43,7 @@ extension PreviewReferenceFloor: FloorWalkthroughScene {
         tour.map { .init(room: .init(id: $0.room.rawValue, name: $0.room.rawValue), stops: $0.stops) }
     }
     var connectionMessage: String? { nil }
+    var assumptions: [PreviewLayout.Assumption] { [] }
 
     func finishID(_ slot: PreviewFinish.Slot, roomID: String) -> String? {
         Room(rawValue: roomID).flatMap { finishID(slot, in: $0) }
@@ -151,6 +154,7 @@ final class SavedFloorWalkthrough: FloorWalkthroughScene {
     let walkthroughRooms: [WalkthroughRoom]
     let walkthroughLegs: [WalkthroughLeg]
     let connectionMessage: String?
+    let assumptions: [PreviewLayout.Assumption]
     private var models: [String: PreviewRoomScene] = [:]
     private var selections: [String: PreviewFinish.Selection] = [:]
 
@@ -256,6 +260,7 @@ final class SavedFloorWalkthrough: FloorWalkthroughScene {
         let connected = [rooms[start].label] + rooms.indices.filter { $0 != start && visited.contains($0) }.map { rooms[$0].label }
         walkthroughRooms = connected
         walkthroughLegs = legs
+        assumptions = visited.sorted().flatMap { rooms[$0].layout.assumptions }
         connectionMessage = visited.count == entries.count ? nil
             : "Rooms outside this route: \(entries.filter { entry in !connected.contains { $0.id == entry.id.uuidString } }.map(\.name).joined(separator: ", ")). Check their outlines, fixture clearances, and matching doors or cased openings in Edit Proposed Layout, then save a new revision."
 

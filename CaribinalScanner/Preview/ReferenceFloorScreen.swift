@@ -6,6 +6,9 @@ struct ReferenceFloorScreen: View {
     var kitchen = PreviewReferenceKitchen.room()
     var savedRooms: [RoomEntry]?
     var finishKey = "walkthrough.sample"
+    var store = PreviewChoiceStore.sample
+    var revisionTitle: String?
+    var savedAt: Date?
     @Environment(\.dismiss) private var dismiss
     @State private var floor: (any FloorWalkthroughScene)?
     @State private var selectedRoom = ""
@@ -46,8 +49,21 @@ struct ReferenceFloorScreen: View {
                                     }.onEnded { _ in pinchScale = 1 })
                                     .accessibilityHidden(true)
                             }
-                            .accessibilityLabel("Floor walkthrough")
-                            .frame(height: min(proxy.size.height * 0.53, proxy.size.width * 0.75))
+                            .accessibilityLabel(savedRooms == nil ? "Sample floor walkthrough" : "Floor walkthrough")
+                            // The lens is built for a 4:3 picture. Any other
+                            // shape would stretch the room, so the picture
+                            // keeps its shape and the rest is letterboxed.
+                            .aspectRatio(PreviewCamera.aspect, contentMode: .fit)
+                            .overlay(alignment: .bottomLeading) {
+                                Text(savedRooms == nil ? "Sample floor" : "Illustration from the drawing")
+                                    .font(.caption2.weight(.semibold))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(.ultraThinMaterial, in: Capsule())
+                                    .padding(8)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: proxy.size.height * 0.53)
+                            .background(Color.black)
                         Form {
                             Section("Walkthrough") {
                                 if walking {
@@ -60,7 +76,7 @@ struct ReferenceFloorScreen: View {
                                     }
                                 }
                                 if !walking || paused {
-                                    Button("Show Whole Room", systemImage: "arrow.up.left.and.arrow.down.right") {
+                                    Button("Wide View", systemImage: "arrow.up.left.and.arrow.down.right") {
                                         lookYaw = 0
                                         lookPitch = 0
                                         zoom = 34
@@ -101,6 +117,23 @@ struct ReferenceFloorScreen: View {
                             Section {
                                 Text("Drag to look around and pinch to zoom while stopped or paused.")
                             }
+                            Section {
+                                if savedRooms == nil {
+                                    Label("Sample floor. Not a drawing of this project. Rooms and furniture are placeholders.",
+                                          systemImage: "info.circle")
+                                } else {
+                                    if let assumed = PreviewCaption.assumptionText(floor.assumptions) {
+                                        Label(assumed, systemImage: "ruler")
+                                    }
+                                    if floor.assumptions.contains(where: { if case .genericFixture = $0 { true } else { false } }) {
+                                        Label("Plain blocks mark items that are not yet detailed.", systemImage: "cube")
+                                    }
+                                    Label("Drawn on this device from \(drawingName). Finishes are representative. Confirm colours and products from samples.",
+                                          systemImage: "info.circle")
+                                }
+                            }
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                         }
                     } else if unavailable {
                         ContentUnavailableView("Floor Preview Unavailable", systemImage: "house",
@@ -111,7 +144,7 @@ struct ReferenceFloorScreen: View {
                     }
                 }
             }
-            .navigationTitle("Floor Walkthrough")
+            .navigationTitle(savedRooms == nil ? "Sample Floor Walkthrough" : "Floor Walkthrough")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
@@ -129,7 +162,7 @@ struct ReferenceFloorScreen: View {
                 unavailable = loaded == nil
                 pose = loaded?.entrance
                 if let loaded {
-                    let saved = UserDefaults.standard.dictionary(forKey: finishKey) as? [String: String] ?? [:]
+                    let saved = store.value([String: String].self, for: finishKey) ?? [:]
                     selectedRoom = loaded.walkthroughRooms.first?.id ?? ""
                     for room in loaded.walkthroughRooms {
                         for slot in [PreviewFinish.Slot.floor, .wall] {
@@ -153,9 +186,16 @@ struct ReferenceFloorScreen: View {
         guard let finish = PreviewFinish.finish(id), let floor,
               floor.finishID(finish.slot, roomID: selectedRoom) != id else { return }
         floor.change(finish, roomID: selectedRoom)
-        var saved = UserDefaults.standard.dictionary(forKey: finishKey) as? [String: String] ?? [:]
+        var saved = store.value([String: String].self, for: finishKey) ?? [:]
         saved["\(selectedRoom).\(finish.slot.rawValue)"] = id
-        UserDefaults.standard.set(saved, forKey: finishKey)
+        store.set(saved, for: finishKey)
+    }
+
+    /// The revision the floor is drawn from, as it is named on a still.
+    private var drawingName: String {
+        guard let revisionTitle else { return "the saved drawing" }
+        guard let savedAt else { return revisionTitle }
+        return "\(revisionTitle), saved \(savedAt.formatted(date: .abbreviated, time: .omitted))"
     }
 
     private func refreshFinishes() {

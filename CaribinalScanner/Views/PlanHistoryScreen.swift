@@ -140,7 +140,8 @@ struct PlanSnapshotScreen: View {
                     FloorPlanCanvas(plan: plan, useImperial: useImperial, markers: snapshot.markers.markers)
                         .frame(height: 340)
                         .accessibilityLabel("Saved floor plan")
-                    if rooms.count > 1 {
+                    // A finished walkthrough is a proposal. Existing Conditions shows the house as it stands.
+                    if rooms.count > 1, snapshot.id != existingConditionsID {
                         Button("Walk Through Saved Floor", systemImage: "figure.walk") {
                             showingSavedWalkthrough = true
                         }
@@ -182,12 +183,15 @@ struct PlanSnapshotScreen: View {
             Model3DScreen(project: project, snapshotRooms: rooms, title: title)
         }
         .fullScreenCover(isPresented: $showingSavedWalkthrough) {
-            ReferenceFloorScreen(savedRooms: rooms, finishKey: "walkthrough.saved.\(snapshot.id).\(floor ?? "")")
+            ReferenceFloorScreen(savedRooms: rooms, finishKey: "walkthrough.\(snapshot.id).\(floor ?? "")",
+                                 store: PreviewChoiceStore(project: project),
+                                 revisionTitle: snapshot.title, savedAt: snapshot.savedAt)
         }
         .fullScreenCover(item: $previewRoom) { entry in
             FinishedPreviewScreen(source: FinishedPreviewSource(room: entry.room, roomName: entry.name,
                                                                 revisionTitle: snapshot.title, savedAt: snapshot.savedAt,
                                                                 comparisonKey: "\(snapshot.id).\(entry.id)",
+                                                                store: PreviewChoiceStore(project: project),
                                                                 floorRooms: rooms, markers: snapshot.markers.markers))
         }
         .sheet(item: $export) { file in

@@ -246,7 +246,7 @@ struct SuiteCompliance {
         }
         let fixtures = rooms.flatMap(\.room.fixtures)
         let hasToilet = fixtures.contains { $0.kind == .toilet }
-        let hasKitchenFixture = fixtures.contains { $0.kind == .stove || $0.kind == .baseCabinets }
+        let hasKitchenFixture = fixtures.contains { [.stove, .baseCabinets, .kitchenSink, .microwave].contains($0.kind) }
 
         func declared(_ title: String, ok: Bool, okDetail: String, missingDetail: String,
                       reference: String, missingStatus: Status = .warning) {

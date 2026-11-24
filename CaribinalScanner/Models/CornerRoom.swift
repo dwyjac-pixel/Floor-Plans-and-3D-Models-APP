@@ -124,6 +124,17 @@ struct CornerRoom: Codable {
 
             var id: String { rawValue }
 
+            /// Kinds the plan editor offers. The four kitchen kinds added for
+            /// the finished preview are held back: version 1.0.2 skips a
+            /// fixture whose kind it does not know and then saves the room
+            /// and every saved revision without it, so a kitchen drawn with
+            /// them would lose them on any older device sharing the project.
+            /// Offer them once a version that keeps unknown kinds has
+            /// replaced 1.0.2.
+            static let placeable: [Kind] = allCases.filter {
+                ![.shortUpperCabinet, .kitchenSink, .microwave, .dishwasher].contains($0)
+            }
+
             enum Category: String, CaseIterable, Identifiable {
                 case kitchen = "Kitchen"
                 case bathroom = "Bathroom"
