@@ -362,6 +362,36 @@ final class PreviewRoomScene {
         }
     }
 
+    /// Moves this room into a floor made of several rooms and returns the
+    /// group that now holds it.
+    ///
+    /// A floor has one sun. The room's own key and bounce stay behind
+    /// unless `bringSun` is set, which the first room does; otherwise every
+    /// room would be lit by every other room's pair and the same paint
+    /// would change brightness with the number of rooms. The room's
+    /// ceiling lights come along and are confined to this room's own
+    /// surfaces, so no surface is ever lit by more than its own lamps.
+    func join(_ floor: SCNScene, named name: String, index: Int, bringSun: Bool) -> SCNNode {
+        let group = SCNNode()
+        group.name = name
+        let category = 1 << (index % 30 + 1)
+        for child in scene.rootNode.childNodes where child !== cameraNode {
+            if child.name == "lights" {
+                potLights.removeFromParentNode()
+                group.addChildNode(potLights)
+                if bringSun { floor.rootNode.addChildNode(child) }
+                continue
+            }
+            group.addChildNode(child)
+        }
+        group.enumerateHierarchy { node, _ in
+            node.categoryBitMask = category
+            node.light?.categoryBitMask = category
+        }
+        floor.rootNode.addChildNode(group)
+        return group
+    }
+
     // MARK: Camera
 
     private func buildCamera() {

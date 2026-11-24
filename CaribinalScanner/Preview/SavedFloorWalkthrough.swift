@@ -265,20 +265,16 @@ final class SavedFloorWalkthrough: FloorWalkthroughScene {
         scene.lightingEnvironment.contents = environment.image
         scene.lightingEnvironment.intensity = CGFloat(environment.intensity)
         let doorsToOpen = Set(used.flatMap { [$0.openingA, $0.openingB] })
-        for index in visited.sorted() {
+        for (order, index) in visited.sorted().enumerated() {
             let room = rooms[index]
             let model = PreviewRoomScene(layout: room.layout, library: library)
-            let group = SCNNode()
-            group.name = "saved-room-\(room.label.id)"
-            group.simdPosition = SIMD3(Float(room.layout.origin.x), 0, Float(room.layout.origin.z))
             model.overheadHidden.isHidden = false
-            for child in model.scene.rootNode.childNodes where child !== model.cameraNode && child.light == nil {
-                group.addChildNode(child)
-            }
+            // One key and one bounce for the whole floor, from the first room.
+            let group = model.join(scene, named: "saved-room-\(room.label.id)", index: order, bringSun: order == 0)
+            group.simdPosition = SIMD3(Float(room.layout.origin.x), 0, Float(room.layout.origin.z))
             for id in doorsToOpen {
                 group.childNode(withName: "door-\(id.uuidString)", recursively: true)?.isHidden = true
             }
-            scene.rootNode.addChildNode(group)
             models[room.label.id] = model
             selections[room.label.id] = model.selection
         }
@@ -295,9 +291,11 @@ final class SavedFloorWalkthrough: FloorWalkthroughScene {
             geometry.firstMaterial = library.material("fixed.trim")
             scene.rootNode.addChildNode(SCNNode(geometry: geometry))
         }
-        camera.camera = SCNCamera()
-        camera.camera?.zNear = 0.05
-        camera.camera?.zFar = 60
+        // The same exposure and shading as a single room, so a finish
+        // chosen here looks the same in Preview Renovation.
+        let lens = SCNCamera()
+        PreviewRoomScene.configure(lens)
+        camera.camera = lens
         scene.rootNode.addChildNode(camera)
         placeCamera(entrance)
     }

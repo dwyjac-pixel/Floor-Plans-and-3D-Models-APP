@@ -69,6 +69,63 @@ struct PreviewReferenceFloorTests {
         let end = PreviewReferenceFloor.Pose(x: 2, z: 0, heading: -170)
         let half = start.interpolated(to: end, fraction: 0.5)
         precondition(half.x == 1 && half.heading == 180, "turn through the shortest angle")
-        print("Independent finishes, saved appliance placement, and four door crossings passed.")
+        // One sun for a whole floor, however many rooms it joins: every
+        // extra key or bounce would relight every other room.
+        func lights(in scene: SCNScene) -> (directional: Int, casters: Int, perSurface: Int) {
+            var all: [SCNLight] = []
+            var categories: Set<Int> = []
+            scene.rootNode.enumerateHierarchy { node, _ in
+                if let light = node.light { all.append(light) }
+                if node.geometry != nil { categories.insert(node.categoryBitMask) }
+            }
+            let most = categories.map { category in all.filter { $0.categoryBitMask & category != 0 }.count }.max() ?? 0
+            return (all.filter { $0.type == .directional }.count, all.filter(\.castsShadow).count, most)
+        }
+        let sample = lights(in: floor.scene)
+        precondition(sample.directional == 2 && sample.casters == 1, "the sample floor has one key and one bounce, found \(sample)")
+        precondition(sample.perSurface <= 8, "no surface is lit by more than eight lights")
+
+        // A saved floor: a hall and a bedroom drawn far from the origin,
+        // sharing a wall with a door on each face.
+        var hall = CornerRoom(corners: [.init(x: 10, z: 20), .init(x: 13, z: 20), .init(x: 13, z: 21.2), .init(x: 10, z: 21.2)],
+                              ceilingHeightMeters: 2.3, ceilingHeightSource: .fieldMeasured)
+        hall.openings = [.init(kind: .door, wallIndex: 2, offsetMeters: 1.0, widthMeters: 0.8, heightMeters: 2.03)]
+        var bed = CornerRoom(corners: [.init(x: 10, z: 21.3), .init(x: 13, z: 21.3), .init(x: 13, z: 24.3), .init(x: 10, z: 24.3)],
+                             ceilingHeightMeters: 2.3, ceilingHeightSource: .fieldMeasured)
+        bed.openings = [.init(kind: .door, wallIndex: 0, offsetMeters: 1.2, widthMeters: 0.8, heightMeters: 2.03)]
+        var den = bed
+        den.corners = den.corners.map { .init(x: $0.x + 20, z: $0.z) }
+        let hallID = UUID(), bedID = UUID(), denID = UUID()
+        guard let saved = SavedFloorWalkthrough(entries: [(hallID, "Hallway", hall), (bedID, "Bedroom", bed), (denID, "Den", den)]) else {
+            fatalError("Two rooms that share a doorway did not join")
+        }
+        precondition(saved.walkthroughRooms.map(\.name) == ["Hallway", "Bedroom"], "the hall and bedroom join through their door")
+        precondition(saved.connectionMessage?.contains("Den") == true, "a room with no shared doorway is named, not drawn")
+        let joined = lights(in: saved.scene)
+        precondition(joined.directional == 2 && joined.casters == 1, "a saved floor has one key and one bounce, found \(joined)")
+        precondition(joined.perSurface <= 8, "no surface is lit by more than eight lights")
+        precondition(saved.camera.camera?.wantsHDR == true && saved.camera.camera?.wantsExposureAdaptation == false,
+                     "a saved floor is exposed like a single room")
+        // Rooms sit where the drawing puts them.
+        let bedroomGroup = saved.scene.rootNode.childNode(withName: "saved-room-\(bedID.uuidString)", recursively: false)
+        precondition(bedroomGroup?.simdPosition == SIMD3<Float>(10, 0, 21.3), "the bedroom stands at its drawn position")
+        // A floor change in one room and a paint change in the other touch nothing else.
+        let hallBefore = (saved.finishID(.floor, roomID: hallID.uuidString), saved.finishID(.wall, roomID: hallID.uuidString))
+        let pose = saved.camera.simdTransform
+        saved.change(charcoal, roomID: bedID.uuidString)
+        precondition(saved.finishID(.floor, roomID: bedID.uuidString) == charcoal.id)
+        precondition(saved.finishID(.floor, roomID: hallID.uuidString) == hallBefore.0)
+        saved.change(grey, roomID: hallID.uuidString)
+        precondition(saved.finishID(.wall, roomID: hallID.uuidString) == grey.id && saved.finishID(.floor, roomID: hallID.uuidString) == hallBefore.0)
+        precondition(saved.finishID(.wall, roomID: bedID.uuidString) != grey.id && saved.camera.simdTransform == pose)
+        // Every standing point of the route is inside a room and clear of the walls.
+        let layouts = [PreviewLayout(room: hall), PreviewLayout(room: bed)]
+        for stop in saved.walkthroughLegs.flatMap(\.stops) + [saved.entrance] {
+            let point = PreviewLayout.Point(x: Double(stop.x), z: Double(stop.z))
+            let inRoom = layouts.contains { $0.contains(point - $0.origin) }
+            let inDoorway = point.x > 11.1 && point.x < 11.9 && point.z > 21.15 && point.z < 21.35
+            precondition(inRoom || inDoorway, "route point \(point) is outside every room")
+        }
+        print("Independent finishes, saved appliance placement, four door crossings, one sun per floor, and a saved floor join passed.")
     }
 }

@@ -99,15 +99,12 @@ final class PreviewReferenceFloor {
         // Extend the tested hall. Its end cap gives way to this corridor.
         bath.scene.rootNode.childNode(withName: "reference-hallway", recursively: false)?.removeFromParentNode()
         build()
-        let kitchenGroup = SCNNode()
-        kitchenGroup.name = "joined-kitchen"
+        // The bathroom's key and bounce light the whole floor. The kitchen
+        // brings only its own ceiling lights.
+        let kitchenGroup = kitchen.join(scene, named: "joined-kitchen", index: 1, bringSun: false)
         let origin = map(.init(x: 0, z: 0))
         kitchenGroup.simdPosition = SIMD3(Float(origin.x), 0, Float(origin.z))
         kitchenGroup.simdEulerAngles.y = -Float(rotation)
-        for child in kitchen.scene.rootNode.childNodes where child !== kitchen.cameraNode && child.light == nil {
-            kitchenGroup.addChildNode(child)
-        }
-        scene.rootNode.addChildNode(kitchenGroup)
         placeCamera(entrance)
     }
 
