@@ -76,9 +76,15 @@ final class PreviewReferenceFloor {
                return layout.contains(point) && !layout.isInsideSolid(point, margin: 0.13)
            }) {
             let position = map(wide.plan)
-            kitchenStops.append(Pose(x: Float(position.x), z: Float(position.z),
-                                    heading: wide.headingDegrees + rotation * 180 / .pi,
-                                    pitch: wide.pitchDegrees, fov: wide.horizontalFOV))
+            let widePose = Pose(x: Float(position.x), z: Float(position.z),
+                                heading: wide.headingDegrees + rotation * 180 / .pi,
+                                pitch: wide.pitchDegrees, fov: wide.horizontalFOV)
+            kitchenStops.append(widePose)
+            // Turn toward the doorway before walking out. Turning at the
+            // door itself swings the view across the open door leaf, which
+            // then fills the whole picture.
+            let out = atan2(Double(crossesDoor.z - widePose.z), Double(crossesDoor.x - widePose.x)) * 180 / .pi
+            kitchenExit.append(Pose(x: widePose.x, z: widePose.z, heading: out, fov: 82))
             kitchenExit.append(Pose(x: crossesDoor.x, z: crossesDoor.z, heading: 0, fov: 82))
         }
         kitchenExit.append(Pose(x: -5.92, z: 0.8, heading: 0))
@@ -105,6 +111,10 @@ final class PreviewReferenceFloor {
         let origin = map(.init(x: 0, z: 0))
         kitchenGroup.simdPosition = SIMD3(Float(origin.x), 0, Float(origin.z))
         kitchenGroup.simdEulerAngles.y = -Float(rotation)
+        // A doorway the tour walks through is shown without its leaf, as on
+        // a saved floor. Standing open, this one hangs across the way from
+        // the wide view back to the hall and blanks the picture.
+        kitchenGroup.childNode(withName: "door-\(door.void.id.uuidString)", recursively: true)?.isHidden = true
         placeCamera(entrance)
     }
 

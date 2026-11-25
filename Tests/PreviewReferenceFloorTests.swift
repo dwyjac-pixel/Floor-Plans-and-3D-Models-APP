@@ -69,6 +69,26 @@ struct PreviewReferenceFloorTests {
         let end = PreviewReferenceFloor.Pose(x: 2, z: 0, heading: -170)
         let half = start.interpolated(to: end, fraction: 0.5)
         precondition(half.x == 1 && half.heading == 180, "turn through the shortest angle")
+        // Leaving the kitchen, the camera faces the way it walks whenever it
+        // is near the doorway. Turning there would swing the view across the
+        // open door leaf and blank the picture.
+        var previous = floor.tour.first { $0.room == .kitchen }!.stops.last!
+        for stop in floor.tour.first(where: { $0.room == .living })!.stops {
+            for step in 0...40 {
+                let pose = previous.interpolated(to: stop, fraction: Double(step) / 40)
+                let nearDoor = abs(pose.x - -6.30) < 0.9 && abs(pose.z - 0.8) < 0.6
+                let turned = abs((pose.heading + 540).truncatingRemainder(dividingBy: 360) - 180)
+                precondition(!nearDoor || pose.x > -6.0 || turned < 45,
+                             "camera turns across the kitchen door at x \(pose.x), heading \(pose.heading)")
+            }
+            previous = stop
+        }
+
+        // The kitchen doorway is on the route, so its leaf is not drawn.
+        let kitchenDoor = PreviewCamera.entry(in: floor.kitchen.layout)!.void.id
+        let leaf = floor.scene.rootNode.childNode(withName: "door-\(kitchenDoor.uuidString)", recursively: true)
+        precondition(leaf?.isHidden == true, "the kitchen door leaf would hang across the walk back to the hall")
+
         // One sun for a whole floor, however many rooms it joins: every
         // extra key or bounce would relight every other room.
         func lights(in scene: SCNScene) -> (directional: Int, casters: Int, perSurface: Int) {
