@@ -92,9 +92,30 @@ enum PreviewFinish {
         var vertical: Bool
     }
 
+    /// A floor of boards laid end to end in staggered rows.
+    struct Plank: Equatable {
+        /// Board face in millimetres, as sold.
+        var width: Double
+        var length: Double
+        var hex: String
+        var grainHex: String
+        var roughness: Double
+        /// Board to board shade difference, 0 to 1.
+        var variation: Double
+
+        /// Rows in one texture repeat: close to 1.2 m of floor.
+        var rows: Int { max(2, Int((1200 / width).rounded())) }
+        /// Size of one texture repeat in metres: one board long.
+        var repeatWidth: Double { length / 1000 }
+        var repeatHeight: Double { Double(rows) * width / 1000 }
+    }
+
     enum Surface: Equatable {
         case paint(hex: String, roughness: Double)
         case tile(Tile)
+        case plank(Plank)
+        case carpet(hex: String)
+        case concrete(hex: String)
         case wood(Wood)
         case stone(hex: String, veinHex: String, veining: Double, roughness: Double)
         case metal(hex: String, roughness: Double)
@@ -143,6 +164,14 @@ enum PreviewFinish {
 
         var look: Look { PreviewFinish.looks.first { $0.id == lookID } ?? PreviewFinish.looks[0] }
 
+        /// What a room opens with: a look, with the floor the plan names
+        /// for this room when it names one. The drawing comes first.
+        static func starting(for layout: PreviewLayout, lookID: String = PreviewFinish.looks[0].id) -> Selection {
+            var selection = Selection(lookID: lookID)
+            selection.overrides[.floor] = PreviewFinish.floorFinish(for: layout.floorType)
+            return selection
+        }
+
         private enum CodingKeys: String, CodingKey {
             case lookID, overrides
         }
@@ -166,6 +195,19 @@ enum PreviewFinish {
         }
     }
 
+    /// The floor finish that stands for a floor type chosen on the plan.
+    /// Tile, or no choice, leaves the floor to the look.
+    static func floorFinish(for type: CornerRoom.FloorType?) -> String? {
+        switch type {
+        case .vinylPlank: "floor.vinyl-plank"
+        case .laminate: "floor.laminate"
+        case .hardwood: "floor.hardwood"
+        case .carpet: "floor.carpet"
+        case .concrete: "floor.concrete"
+        case .tile, .none: nil
+        }
+    }
+
     static func finish(_ id: String) -> Finish? { catalog.first { $0.id == id } }
     static func finishes(for slot: Slot) -> [Finish] { catalog.filter { $0.slot == slot } }
 
@@ -180,6 +222,18 @@ enum PreviewFinish {
         Finish(id: "floor.charcoal-24x24", slot: .floor, name: "Charcoal porcelain, 24 x 24 in",
                surface: .tile(Tile(width: 610, height: 610, grout: 3, pattern: .stacked,
                                    tileHex: "55585A", groutHex: "3F4142", roughness: 0.45, variation: 0.05, mottle: 0.4))),
+        // Floors a plan can name that are not tile. A room drawn with one
+        // of these opens with it; see `floorFinish(for:)`.
+        Finish(id: "floor.vinyl-plank", slot: .floor, name: "Oak look vinyl plank, 7 x 48 in",
+               surface: .plank(Plank(width: 180, length: 1220, hex: "B99A73", grainHex: "8E7250", roughness: 0.55, variation: 0.07))),
+        Finish(id: "floor.laminate", slot: .floor, name: "Grey oak look laminate, 8 x 51 in",
+               surface: .plank(Plank(width: 195, length: 1290, hex: "A39A8D", grainHex: "7C7468", roughness: 0.5, variation: 0.06))),
+        Finish(id: "floor.hardwood", slot: .floor, name: "Natural hardwood, 3 1/4 in strip",
+               surface: .plank(Plank(width: 83, length: 900, hex: "B4865A", grainHex: "86603D", roughness: 0.42, variation: 0.1))),
+        Finish(id: "floor.carpet", slot: .floor, name: "Greige carpet",
+               surface: .carpet(hex: "B8AE9F")),
+        Finish(id: "floor.concrete", slot: .floor, name: "Sealed concrete",
+               surface: .concrete(hex: "9C9B97")),
         // Shower and tub surrounds
         Finish(id: "wet.prefab", slot: .wetWall, name: "Prefab surround",
                surface: .paint(hex: "EEEDE8", roughness: 0.32)),

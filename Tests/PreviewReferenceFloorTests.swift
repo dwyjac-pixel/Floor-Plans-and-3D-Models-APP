@@ -113,6 +113,7 @@ struct PreviewReferenceFloorTests {
         var bed = CornerRoom(corners: [.init(x: 10, z: 21.3), .init(x: 13, z: 21.3), .init(x: 13, z: 24.3), .init(x: 10, z: 24.3)],
                              ceilingHeightMeters: 2.3, ceilingHeightSource: .fieldMeasured)
         bed.openings = [.init(kind: .door, wallIndex: 0, offsetMeters: 1.2, widthMeters: 0.8, heightMeters: 2.03)]
+        bed.floorType = .carpet
         var den = bed
         den.corners = den.corners.map { .init(x: $0.x + 20, z: $0.z) }
         let hallID = UUID(), bedID = UUID(), denID = UUID()
@@ -129,6 +130,10 @@ struct PreviewReferenceFloorTests {
         // Rooms sit where the drawing puts them.
         let bedroomGroup = saved.scene.rootNode.childNode(withName: "saved-room-\(bedID.uuidString)", recursively: false)
         precondition(bedroomGroup?.simdPosition == SIMD3<Float>(10, 0, 21.3), "the bedroom stands at its drawn position")
+        // Each room opens with the floor its plan names: the bedroom was drawn with carpet.
+        precondition(saved.finishID(.floor, roomID: bedID.uuidString) == "floor.carpet", "a carpeted bedroom is drawn with carpet")
+        precondition(saved.finishID(.floor, roomID: hallID.uuidString) == PreviewFinish.looks[0].finishes[.floor],
+                     "a room with no floor named takes the look's floor")
         // A floor change in one room and a paint change in the other touch nothing else.
         let hallBefore = (saved.finishID(.floor, roomID: hallID.uuidString), saved.finishID(.wall, roomID: hallID.uuidString))
         let pose = saved.camera.simdTransform

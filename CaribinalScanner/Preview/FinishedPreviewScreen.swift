@@ -76,6 +76,7 @@ final class FinishedPreviewModel: ObservableObject {
     init(source: FinishedPreviewSource) {
         self.source = source
         layout = PreviewLayout(room: source.room)
+        selection = .starting(for: layout)
         phase = layout.problems.isEmpty ? .loading : .blocked
     }
 
@@ -91,7 +92,7 @@ final class FinishedPreviewModel: ObservableObject {
         let started = CACurrentMediaTime()
         let built = await Task.detached(priority: .userInitiated) { () -> (PreviewRoomScene, PreviewHallway?) in
             let library = PreviewFinishLibrary(textureSize: 512)
-            let room = PreviewRoomScene(layout: layout, library: library)
+            let room = PreviewRoomScene(layout: layout, selection: .starting(for: layout), library: library)
             return (room, includesHallway ? PreviewHallway(room: room) : nil)
         }.value
         readout.buildSeconds = CACurrentMediaTime() - started
@@ -115,6 +116,8 @@ final class FinishedPreviewModel: ObservableObject {
     func choose(look: PreviewFinish.Look) {
         var next = PreviewFinish.Selection(lookID: look.id)
         next.overrides[.wetWall] = selection.overrides[.wetWall]
+        // A floor the plan names for this room is not the look's to change.
+        if PreviewFinish.floorFinish(for: layout.floorType) != nil { next.overrides[.floor] = selection.overrides[.floor] }
         prepare(next)
     }
 
@@ -260,7 +263,7 @@ final class FinishedPreviewModel: ObservableObject {
         let shown = selection
         defer { room.apply(shown) }
         return PreviewFinish.looks.compactMap { look in
-            room.apply(PreviewFinish.Selection(lookID: look.id))
+            room.apply(.starting(for: layout, lookID: look.id))
             guard let shot = PreviewStill.render(room, from: stop, width: 1440),
                   let final = PreviewStill.captioned(shot, lines: captionLines(look: look.name, useImperial: useImperial)) else { return nil }
             return write(final, named: "\(source.roomName) \(look.name) \(stop.kind.title)")

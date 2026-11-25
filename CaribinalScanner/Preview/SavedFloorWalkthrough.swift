@@ -272,7 +272,8 @@ final class SavedFloorWalkthrough: FloorWalkthroughScene {
         let doorsToOpen = Set(used.flatMap { [$0.openingA, $0.openingB] })
         for (order, index) in visited.sorted().enumerated() {
             let room = rooms[index]
-            let model = PreviewRoomScene(layout: room.layout, library: library)
+            // Each room opens with the floor the plan names for it.
+            let model = PreviewRoomScene(layout: room.layout, selection: .starting(for: room.layout), library: library)
             model.overheadHidden.isHidden = false
             // One key and one bounce for the whole floor, from the first room.
             let group = model.join(scene, named: "saved-room-\(room.label.id)", index: order, bringSun: order == 0)

@@ -169,6 +169,74 @@ enum PreviewTextures {
         return Maps(albedo: albedo, roughness: roughness, normal: normal, width: tile.repeatWidth, height: tile.repeatHeight)
     }
 
+    // MARK: Plank floors
+
+    /// Boards one texture repeat long, laid in rows with each row started
+    /// at its own point so the end joints do not line up. Every board has
+    /// its own shade and its own run of grain.
+    static func plank(_ plank: PreviewFinish.Plank, seed: UInt64, size: Int = 1024) -> Maps {
+        let widthMM = plank.repeatWidth * 1000, heightMM = plank.repeatHeight * 1000
+        let scale = Double(size) / max(widthMM, heightMM)
+        let w = max(64, Int((widthMM * scale).rounded())), h = max(64, Int((heightMM * scale).rounded()))
+        let mmX = widthMM / Double(w), mmY = heightMM / Double(h)
+        let pixel = max(mmX, mmY)
+        let base = rgb(plank.hex), grain = rgb(plank.grainHex)
+        var heights = [Double](repeating: 0, count: w * h)
+        let albedo = image(w, h) { px, py in
+            let x = (Double(px) + 0.5) * mmX, y = (Double(py) + 0.5) * mmY
+            let row = min(plank.rows - 1, Int(y / plank.width))
+            // Each row starts somewhere along the board, the same every repeat.
+            let start = hash(row, 17, seed) * plank.length
+            var along = (x - start).truncatingRemainder(dividingBy: plank.length)
+            if along < 0 { along += plank.length }
+            let across = y - Double(row) * plank.width
+            let edge = min(min(across, plank.width - across), min(along, plank.length - along))
+            // A fine dark line at every joint, about a pixel wide.
+            let joint = 1 - smoothstep(0, 1.2 * pixel, edge)
+            heights[py * w + px] = 0.4 * smoothstep(0, 2.0, edge)
+            let board = seed &+ UInt64(row * 131 + 7)
+            let u = along / plank.length, v = across / plank.width
+            let drift = noise(u * 3, v * 2 + Double(row) * 5.3, 3, 64, board) - 0.5
+            let ring = v * 3.2 + drift * 2.6 + hash(row, 3, seed) * 4
+            let phase = ring - floor(ring)
+            let late = smoothstep(0.3, 0.9, phase) * (1 - smoothstep(0.9, 1, phase))
+            let fibre = noise(u * 24, v * 46 + Double(row) * 9.1, 24, 512, board &+ 5) - 0.5
+            let shade = 1 + plank.variation * (hash(row, 29, seed) * 2 - 1)
+            let amount = clamp(0.12 + 0.3 * late + 0.34 * fibre)
+            let tone = mix(base, grain, amount)
+            let dark = 1 - 0.45 * joint
+            return (tone.r * shade * dark, tone.g * shade * dark, tone.b * shade * dark)
+        }
+        let normal = normalMap(w, h, pixelWidth: mmX, pixelHeight: mmY) { px, py in heights[py * w + px] }
+        return Maps(albedo: albedo, roughness: nil, normal: normal, width: plank.repeatWidth, height: plank.repeatHeight)
+    }
+
+    // MARK: Carpet and concrete
+
+    /// A surface with no pattern: soft clouding and fine grain over one
+    /// colour. With `pile` the grain also has depth, as carpet does.
+    static func mottled(hex: String, cloud: Double, grain: Double, pile: Bool, seed: UInt64, size: Int = 1024) -> Maps {
+        // Carpet needs its tufts resolved, so its repeat is small. A hard
+        // floor has only soft clouding, which would show as a grid of
+        // blotches unless the repeat is wider than most rooms are deep.
+        let side = pile ? 0.8 : 2.6
+        let n = max(64, size / 2)
+        let base = rgb(hex)
+        var heights = [Double](repeating: 0, count: n * n)
+        let albedo = image(n, n) { px, py in
+            let x = Double(px) / Double(n), y = Double(py) / Double(n)
+            let soft = noise(x * 5, y * 5, 5, 5, seed) * 2 - 1
+            let fine = hash(px, py, seed &+ 3) * 2 - 1
+            let tuft = noise(x * 96, y * 96, 96, 96, seed &+ 9) * 2 - 1
+            heights[py * n + px] = pile ? 1.2 * (tuft * 0.6 + fine * 0.4) : 0
+            let tone = 1 + cloud * soft + grain * (pile ? tuft * 0.7 + fine * 0.3 : fine)
+            return (base.r * tone, base.g * tone, base.b * tone)
+        }
+        let millimetres = side * 1000 / Double(n)
+        let normal = pile ? normalMap(n, n, pixelWidth: millimetres, pixelHeight: millimetres) { px, py in heights[py * n + px] } : nil
+        return Maps(albedo: albedo, roughness: nil, normal: normal, width: side, height: side)
+    }
+
     // MARK: Wood
 
     static func wood(_ wood: PreviewFinish.Wood, seed: UInt64, size: Int = 1024) -> Maps {

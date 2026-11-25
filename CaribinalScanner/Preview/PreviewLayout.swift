@@ -146,6 +146,8 @@ struct PreviewLayout {
     let origin: Point
     /// Floor outline in scene space, in the saved corner order.
     let floor: [Point]
+    /// The floor finish drawn on the plan, when one was chosen there.
+    let floorType: CornerRoom.FloorType?
     let ceilingHeight: Double
     let walls: [WallFace]
     let solids: [Solid]
@@ -163,6 +165,7 @@ struct PreviewLayout {
 
         self.origin = origin
         self.floor = floor
+        floorType = room.floorType
 
         let height = room.ceilingHeightMeters
         let hasHeight = height.isFinite && height > 0.5

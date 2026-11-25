@@ -75,6 +75,20 @@ final class PreviewFinishLibrary {
             // The normal map holds the joint's real slopes, so it is used
             // at full strength and nothing more.
             if let normal = maps.normal { tiled(material.normal, normal, width: maps.width, height: maps.height) }
+        case .plank(let plank):
+            let maps = PreviewTextures.plank(plank, seed: seed(finish.id), size: textureSize)
+            tiled(material.diffuse, maps.albedo, width: maps.width, height: maps.height)
+            if let normal = maps.normal { tiled(material.normal, normal, width: maps.width, height: maps.height) }
+            material.roughness.contents = number(plank.roughness)
+        case .carpet(let hex):
+            let maps = PreviewTextures.mottled(hex: hex, cloud: 0.03, grain: 0.09, pile: true, seed: seed(finish.id), size: textureSize)
+            tiled(material.diffuse, maps.albedo, width: maps.width, height: maps.height)
+            if let normal = maps.normal { tiled(material.normal, normal, width: maps.width, height: maps.height) }
+            material.roughness.contents = number(1)
+        case .concrete(let hex):
+            let maps = PreviewTextures.mottled(hex: hex, cloud: 0.04, grain: 0.02, pile: false, seed: seed(finish.id), size: textureSize)
+            tiled(material.diffuse, maps.albedo, width: maps.width, height: maps.height)
+            material.roughness.contents = number(0.62)
         case .wood(let wood):
             let maps = PreviewTextures.wood(wood, seed: seed(finish.id), size: textureSize)
             tiled(material.diffuse, maps.albedo, width: maps.width, height: maps.height)

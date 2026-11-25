@@ -376,6 +376,28 @@ struct PreviewGeometryTests {
             expect(false, "selection does not encode")
         }
 
+        // A floor the plan names opens the room. Tile, or no choice, leaves
+        // the floor to the look.
+        let named: [(CornerRoom.FloorType, String)] = [(.vinylPlank, "floor.vinyl-plank"), (.laminate, "floor.laminate"),
+                                                       (.hardwood, "floor.hardwood"), (.carpet, "floor.carpet"),
+                                                       (.concrete, "floor.concrete")]
+        for (type, id) in named {
+            expect(PreviewFinish.floorFinish(for: type) == id && PreviewFinish.finish(id)?.slot == .floor, "\(type.rawValue) has a floor finish")
+            var drawn = PreviewReferenceRoom.bathroom()
+            drawn.floorType = type
+            let start = PreviewFinish.Selection.starting(for: PreviewLayout(room: drawn), lookID: "bright-neutral")
+            expect(start.lookID == "bright-neutral" && start.resolved[.floor] == id, "a room drawn with \(type.rawValue) opens with it")
+        }
+        expect(Set(named.map(\.0)).union([.tile]) == Set(CornerRoom.FloorType.allCases), "every floor type on the plan is handled")
+        expect(PreviewFinish.floorFinish(for: .tile) == nil && PreviewFinish.floorFinish(for: nil) == nil, "tile or no choice is left to the look")
+        expect(PreviewFinish.Selection.starting(for: PreviewLayout(room: PreviewReferenceRoom.bathroom())) == PreviewFinish.Selection(),
+               "the reference bathroom opens with the look's own floor")
+        for finish in PreviewFinish.catalog {
+            guard case .plank(let plank) = finish.surface else { continue }
+            expect(near(plank.repeatWidth * 1000, plank.length, 1e-6) && near(plank.repeatHeight * 1000, Double(plank.rows) * plank.width, 1e-6),
+                   "\(finish.id) repeats on whole boards")
+        }
+
         // True scale: a texture repeat is a whole number of tile pitches.
         for finish in PreviewFinish.catalog {
             guard case .tile(let tile) = finish.surface else { continue }
