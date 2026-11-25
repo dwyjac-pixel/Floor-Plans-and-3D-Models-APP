@@ -274,8 +274,21 @@ struct FloorPlanModel {
                 CGPoint(x: fixture.x - ax * hw - bx * hd, y: fixture.z - az * hw - bz * hd),
                 CGPoint(x: fixture.x - ax * hw + bx * hd, y: fixture.z - az * hw + bz * hd),
             ]
+            // A wall-hung microwave or short upper usually sits over a
+            // stove or a cabinet. Its outline is still drawn, but its name
+            // would print on top of the name of the item below, so the item
+            // below carries the label.
+            let overhead = fixture.kind == .microwave || fixture.kind == .shortUpperCabinet
+            let stacked = overhead && cornerRoom.fixtures.contains { other in
+                guard other.id != fixture.id, other.kind != .bulkhead,
+                      other.widthMeters * other.depthMeters >= fixture.widthMeters * fixture.depthMeters else { return false }
+                let turn = other.rotationDegrees * .pi / 180
+                let dx = fixture.x - other.x, dz = fixture.z - other.z
+                return abs(dx * cos(turn) + dz * sin(turn)) <= other.widthMeters / 2
+                    && abs(-dx * sin(turn) + dz * cos(turn)) <= other.depthMeters / 2
+            }
             objects.append(PlanObjectFootprint(corners: corners,
-                                               label: fixture.kind.shortLabel,
+                                               label: stacked ? "" : fixture.kind.shortLabel,
                                                fixtureKind: fixture.kind,
                                                center: CGPoint(x: fixture.x, y: fixture.z),
                                                size: CGSize(width: fixture.widthMeters, height: fixture.depthMeters),

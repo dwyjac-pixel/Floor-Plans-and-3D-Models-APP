@@ -200,7 +200,7 @@ struct FloorPlanCanvas: View {
                 case .toilet:
                     localLine(-w / 2, -d / 2 + 0.18, w / 2, -d / 2 + 0.18)
                     localCircle(0, d * 0.15, radiusMeters: min(w, d) * 0.28)
-                case .vanity:
+                case .vanity, .kitchenSink:
                     localCircle(0, 0, radiusMeters: min(w, d) * 0.28)
                 case .bedQueen, .bedSingle:
                     localLine(-w / 2 + 0.08, -d / 2 + 0.45, w / 2 - 0.08, -d / 2 + 0.45)

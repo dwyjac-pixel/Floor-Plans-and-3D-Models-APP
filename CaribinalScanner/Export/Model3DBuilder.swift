@@ -456,9 +456,11 @@ enum Model3DBuilder {
             let w = fixture.widthMeters
             let d = fixture.depthMeters
             switch fixture.kind {
-            case .baseCabinets, .island:
+            case .baseCabinets, .island, .kitchenSink:
                 addBox(width: w, depth: d, boxHeight: 0.9, yCenter: 0.45, material: cabinetMaterial)
                 addBox(width: w + 0.05, depth: d + 0.05, boxHeight: 0.04, yCenter: 0.92, material: counterMaterial)
+            case .shortUpperCabinet:
+                addBox(width: w, depth: d, boxHeight: 0.30, yCenter: 1.98, material: cabinetMaterial)
             case .upperCabinets:
                 addBox(width: w, depth: d, boxHeight: 0.76, yCenter: 1.75, material: cabinetMaterial)
             case .toilet:
@@ -496,7 +498,9 @@ enum Model3DBuilder {
                        xOffset: w / 2 - 0.01, material: showerGlass)
             case .fridge:
                 addBox(width: w, depth: d, boxHeight: 1.7, yCenter: 0.85, material: ceramicMaterial)
-            case .stove:
+            case .microwave:
+                addBox(width: w, depth: d, boxHeight: 0.38, yCenter: 1.62, material: counterMaterial)
+            case .stove, .dishwasher:
                 addBox(width: w, depth: d, boxHeight: 0.91, yCenter: 0.455, material: counterMaterial)
             case .washer, .dryer:
                 addBox(width: w, depth: d, boxHeight: 0.9, yCenter: 0.45, material: ceramicMaterial)

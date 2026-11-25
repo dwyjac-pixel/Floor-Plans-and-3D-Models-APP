@@ -1762,7 +1762,7 @@ struct FloorPlanScreen: View {
         if eraserActive {
             guard var room = cornerRoom else { return }
             if let point = planPoint(fromView: location, size: size),
-               let fixture = room.fixtures.first(where: { fixtureContains($0, point: point) }) {
+               let fixture = fixtureUnder(point, in: room) {
                 room.fixtures.removeAll { $0.id == fixture.id }
                 persist(room)
                 return
@@ -1836,7 +1836,7 @@ struct FloorPlanScreen: View {
                 return
             }
             if let point = planPoint(fromView: location, size: size),
-               let fixture = room.fixtures.first(where: { fixtureContains($0, point: point) }) {
+               let fixture = fixtureUnder(point, in: room) {
                 fixtureActionID = fixture.id
                 showingFixtureActions = true
                 return
@@ -1857,7 +1857,7 @@ struct FloorPlanScreen: View {
         // quick actions (Rotate / Edit / Delete).
         if placingKind == nil, let room = cornerRoom {
             if let point = planPoint(fromView: location, size: size),
-               let fixture = room.fixtures.first(where: { fixtureContains($0, point: point) }) {
+               let fixture = fixtureUnder(point, in: room) {
                 fixtureActionID = fixture.id
                 showingFixtureActions = true
                 return
@@ -2241,7 +2241,7 @@ struct FloorPlanScreen: View {
             }
         }
         if let point = planPoint(fromView: location, size: size),
-           let fixture = room.fixtures.first(where: { fixtureContains($0, point: point) }) {
+           let fixture = fixtureUnder(point, in: room) {
             return (.fixture(fixture.id), fixture.x, fixture.z)
         }
         // Grabbing a wall's body slides the whole wall perpendicular — the
@@ -2255,6 +2255,14 @@ struct FloorPlanScreen: View {
                     room.corners[hit.index].x, room.corners[hit.index].z)
         }
         return nil
+    }
+
+    /// The fixture under a point. Where several overlap (a microwave over
+    /// a stove, uppers over base cabinets) the smallest footprint wins, so
+    /// the item on top can still be picked, moved and erased.
+    private func fixtureUnder(_ point: CGPoint, in room: CornerRoom) -> CornerRoom.Fixture? {
+        room.fixtures.filter { fixtureContains($0, point: point) }
+            .min { $0.widthMeters * $0.depthMeters < $1.widthMeters * $1.depthMeters }
     }
 
     private func fixtureContains(_ fixture: CornerRoom.Fixture, point: CGPoint) -> Bool {
@@ -3231,7 +3239,7 @@ struct FixtureCatalogSheet: View {
             List {
                 ForEach(CornerRoom.Fixture.Kind.Category.allCases) { category in
                     Section(category.rawValue) {
-                        ForEach(CornerRoom.Fixture.Kind.allCases.filter { $0.category == category }) { kind in
+                        ForEach(CornerRoom.Fixture.Kind.placeable.filter { $0.category == category }) { kind in
                             Button {
                                 onPick(kind)
                                 dismiss()

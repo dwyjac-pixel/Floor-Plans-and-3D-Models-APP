@@ -470,3 +470,19 @@ The first prototype should only do this:
 * Save/export PDF
 
 Once that works, the app can be expanded into estimating, renovation planning, and legal suite design support.
+
+## 13. Stair capture between floors
+
+Stairs can be missed when scanning down from the main-floor landing or up
+from the basement. Test both directions on the same staircase and check
+whether the capture supplies enough geometry to locate both landings.
+
+Link the upper and lower floor levels and their landing positions. Use
+detected geometry as a starting point when available. Allow users to mark
+the start and end manually and confirm the width, run, rise, and floor
+opening. Use the confirmed geometry for the outline and up/down arrow in
+2D and for the aligned, editable staircase and opening in 3D.
+
+Start with straight flights, then support turns with landings. Use
+simulator fixtures to verify the plan and model. Use a LiDAR device to
+verify live capture in both directions.
