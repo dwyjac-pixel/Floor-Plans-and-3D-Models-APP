@@ -20,9 +20,13 @@ Built and working:
 - **Samples.** A sample bathroom, a sample kitchen and a sample floor. The sample floor is a staged set (its hall, living room and bedroom are placed by hand) and says so on screen.
 - **Choices are kept with the project** in `preview_choices.json` in the project folder: synced, backed up, removed with the project. A room reopens the way it was left.
 
-Held back on purpose:
+How kitchens are saved so an older device cannot lose them:
 
-- **Four kitchen fixture kinds** (short upper cabinet, sink cabinet, microwave, dishwasher) exist in the room model but are not offered in the plan editor. Version 1.0.2 skips a fixture whose kind it does not know, then saves the room and every saved revision without it. A kitchen drawn with them would lose them for good on any older device that shares the project. Before they can be offered, a version that keeps unknown kinds has to replace 1.0.2. This was reproduced against the 1.0.2 model: a room with a stove, a dishwasher and a sink cabinet reads back as a stove alone.
+- Version 1.0.2 skips a fixture whose kind it does not know, then saves the room and every saved revision without it. Checked against the 1.0.2 room model: a room with a stove, a dishwasher and a sink cabinet reads back as a stove alone.
+- So the four kitchen kinds added here (short upper cabinet, sink cabinet, microwave, dishwasher), and any kind added later, are never written into `rooms.json` or `plan_history.json`. They are written into `fixtures_extra.json` in the same project folder, which older versions never open, and put back when the room or revision is read (`Models/FixtureSidecar.swift`, used by `ScanStore`). The room model and its file format did not change.
+- On a device still on 1.0.2 the kitchen shows without those fixtures, and a takeoff, quote or revision made there does not include them. Nothing is lost: on this version they are all there again. Every device that works on a job should be updated before kitchens are relied on.
+- Rules in the save path: a fixture leaves the sidecar only when the rooms being saved were read together with that exact sidecar; a sidecar that is still downloading or unreadable is never written over; a saved revision never loses fixtures on a later save; a kind from a later version is carried through untouched.
+- `sh Tests/test-fixture-sidecar.sh` covers this. It builds the real 1.0.2 room model from git, lets it read, edit and rewrite a project saved by this version, and checks nothing saved here is lost.
 
 Not built yet: rooms with interior walls, tubs as finished models, any link to the quote, mirror reflections, carpet or plank floors in a walkthrough (every floor is tile), separate faucet and door handle finishes, stairs.
 
@@ -31,7 +35,7 @@ Not built yet: rooms with interior walls, tubs as finished models, any link to t
 1. **The saved revision is the drawing.** The preview is built from one room of an immutable `PlanHistory.Snapshot`. It never reads the live editable plan and never writes to the snapshot.
 2. **The picture never invents a dimension.** Wall faces sit on the plan line and wall thickness goes outward, so a clear size in the picture equals the drawing. When the plan lacks a number (a door height, a window sill, a bulkhead drop, a ceiling that was scanned and not measured), the default is used, named on screen and printed under every still.
 3. **Nothing is silently clipped.** A room the preview cannot draw faithfully does not open. The screen says why in plain words. See Blocking problems.
-4. **It stays apart from the editor and the exports, with five stated exceptions.** The feature lives under `CaribinalScanner/Preview/`. Outside it: entry buttons in `Views/PlanHistoryScreen.swift`; four fixture kinds in `Models/CornerRoom.swift` (held out of the editor, see Where it stands); matching cases for them in `Export/Model3DBuilder.swift` and `FloorPlan/FloorPlanCanvas.swift`; `PDFExporter.makeBathroomComparison`; and one line in `Models/SuiteCompliance.swift`. Nothing else in the editor, the 3D model, the USDZ export or the existing PDF changed. Any further edit outside the folder is a decision, not a convenience.
+4. **It stays apart from the editor and the exports, with five stated exceptions.** The feature lives under `CaribinalScanner/Preview/`. Outside it: entry buttons in `Views/PlanHistoryScreen.swift`; four fixture kinds in `Models/CornerRoom.swift`; matching cases for them in `Export/Model3DBuilder.swift` and `FloorPlan/FloorPlanCanvas.swift`; `PDFExporter.makeBathroomComparison`; one line in `Models/SuiteCompliance.swift`; `Models/FixtureSidecar.swift` and the room and history read and write paths in `Models/ScanStore.swift` that use it; picking the smallest fixture under a tap in `FloorPlan/FloorPlanScreen.swift`; and the label rule for stacked overhead items in `FloorPlan/FloorPlanModel.swift`. Nothing else in the editor, the 3D model, the USDZ export or the existing PDF changed. Any further edit outside the folder is a decision, not a convenience.
 5. **On the device, no network, no key.** Textures are drawn in code. Nothing is downloaded or uploaded. The App Privacy answer does not change.
 6. **It is an illustration and says so.** Every still starts with "Illustration from the drawing" and names the room and revision. Finish names are generic; no brand or product is implied.
 7. **No dashes in anything a user reads.**
@@ -226,13 +230,13 @@ Fixed:
 4. **The walkthrough picture was stretched** on any screen that was not an upright phone: 7 percent on an upright iPad, more than double sideways. It now keeps its 4:3 shape.
 5. **The walkthrough carried no honesty labels** and the sample floor never said it was a sample. Both now do, with the revision, assumed dimensions and plain blocks named.
 6. **Saved choices lived outside the project** (not synced, not backed up, never removed, shared with an imported copy) and were lost by a reworded label or renamed slot. They are now in the project folder, saved by stable keys and read tolerantly.
-7. **Four fixture kinds would be lost on 1.0.2.** Held out of the editor (see Where it stands).
+7. **Four fixture kinds would be lost on 1.0.2.** First held out of the editor, then made safe: they are saved beside the files 1.0.2 rewrites (see Where it stands) and are offered in the editor again.
 8. Smaller: no walkthrough on Existing Conditions; Show Whole Room is now Wide View; the suite check counts a sink cabinet or microwave as kitchen fixtures; cabinet finish names no longer say vanity in a kitchen; the saved floor path now has tests.
 
 Open, found but not fixed:
 
 - **Sample floor: leaving the kitchen**, the camera turns into the open kitchen door and the picture is a blank grey panel for about a second.
-- **Plan editor, stacked items.** A tap picks the first fixture under the finger, not the smallest, and labels of stacked items overprint. It only bites once the four held kinds are offered.
+- **Plan editor, stacked items: fixed.** A tap now picks the smallest fixture under the finger, and a microwave or short upper stacked over another item no longer prints its name over it.
 - **A saved floor ignores the saved floor type.** A bedroom saved as carpet is drawn with tile.
 - **The runtime review did not finish.** `FinishedPreviewScreen.swift` (about 700 lines), the PDF path and memory use on older phones have not been reviewed.
 - **iPad was not run.** The 4:3 fix was checked on an iPhone simulator only.
@@ -254,6 +258,7 @@ Stated plainly so nobody is surprised:
 sh Tests/test-preview-geometry.sh          # fidelity, camera, catalog, captions
 sh Tests/test-preview-scene.sh             # the built room, swaps, light budget, blown whites, saved choices
 sh Tests/test-preview-floor.sh             # sample floor and a saved floor joined through a doorway
+sh Tests/test-fixture-sidecar.sh           # newer fixture kinds survive a device on 1.0.2
 sh Tests/render-preview-stills.sh out/     # both looks from every stop, on the Mac
 sh Tests/render-doorway-pair.sh out/       # the locked doorway pair with a manifest
 ```
