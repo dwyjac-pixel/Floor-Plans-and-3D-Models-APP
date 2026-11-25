@@ -52,7 +52,7 @@ struct PlanHistoryScreen: View {
         .fullScreenCover(isPresented: $showingSampleKitchen) {
             FinishedPreviewScreen(source: FinishedPreviewSource(room: PreviewReferenceKitchen.room(),
                                                                 roomName: "Sample kitchen", revisionTitle: "Sample drawing",
-                                                                savedAt: nil))
+                                                                savedAt: nil, comparisonKey: "sample-kitchen"))
         }
         .fullScreenCover(isPresented: $showingSampleFloor) { ReferenceFloorScreen() }
         .sheet(isPresented: $showingSaveRevision) {

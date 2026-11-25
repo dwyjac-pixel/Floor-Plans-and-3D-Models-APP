@@ -29,7 +29,12 @@ struct ReferenceFloorScreen: View {
     var body: some View {
         NavigationStack {
             GeometryReader { proxy in
-                VStack(spacing: 0) {
+                // On a wide screen the picture stands beside the controls
+                // and takes the full height. Stacked there, it would be a
+                // small picture between two wide black bars.
+                let wide = proxy.size.width > proxy.size.height
+                let layout = wide ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+                layout {
                     if let floor {
                         ReferenceFloorView(floor: floor)
                             .overlay {
@@ -62,8 +67,8 @@ struct ReferenceFloorScreen: View {
                                     .background(.ultraThinMaterial, in: Capsule())
                                     .padding(8)
                             }
-                            .frame(maxWidth: .infinity)
-                            .frame(height: min(proxy.size.height * 0.53, proxy.size.width / PreviewCamera.aspect))
+                            .frame(maxWidth: .infinity, maxHeight: wide ? .infinity : nil)
+                            .frame(height: wide ? nil : min(proxy.size.height * 0.53, proxy.size.width / PreviewCamera.aspect))
                             .background(Color.black, ignoresSafeAreaEdges: [])
                         Form {
                             Section("Walkthrough") {
@@ -136,6 +141,7 @@ struct ReferenceFloorScreen: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                         }
+                        .frame(width: wide ? min(380, proxy.size.width * 0.4) : nil)
                     } else if unavailable {
                         ContentUnavailableView("Floor Preview Unavailable", systemImage: "house",
                             description: Text("A walkthrough needs valid room outlines and matching doors or cased openings. Confirm them in Edit Proposed Layout, then save a new revision."))
@@ -154,26 +160,31 @@ struct ReferenceFloorScreen: View {
                 guard floor == nil else { return }
                 let drawing = kitchen
                 let entries = savedRooms?.map { (id: $0.id, name: $0.name, room: $0.room) }
+                let saved = store.value([String: String].self, for: finishKey) ?? [:]
+                // The floor is built in the finishes it was left in, with
+                // its first reflections, before it is shown. Drawing a
+                // finish for the first time is slow and belongs off the
+                // main thread with the rest of the build.
                 let loaded = await Task.detached(priority: .userInitiated) { () -> (any FloorWalkthroughScene)? in
-                    if let entries { return SavedFloorWalkthrough(entries: entries) }
-                    return PreviewReferenceFloor(kitchen: drawing)
+                    let made: (any FloorWalkthroughScene)? = if let entries { SavedFloorWalkthrough(entries: entries) }
+                        else { PreviewReferenceFloor(kitchen: drawing) }
+                    guard let made else { return nil }
+                    for room in made.walkthroughRooms {
+                        for slot in [PreviewFinish.Slot.floor, .wall] {
+                            if let id = saved["\(room.id).\(slot.rawValue)"],
+                               let finish = PreviewFinish.finish(id), finish.slot == slot {
+                                made.change(finish, roomID: room.id)
+                            }
+                        }
+                    }
+                    made.refreshMirrors(at: made.entrance)
+                    return made
                 }.value
                 guard !Task.isCancelled else { return }
                 floor = loaded
                 unavailable = loaded == nil
                 pose = loaded?.entrance
-                if let loaded {
-                    let saved = store.value([String: String].self, for: finishKey) ?? [:]
-                    selectedRoom = loaded.walkthroughRooms.first?.id ?? ""
-                    for room in loaded.walkthroughRooms {
-                        for slot in [PreviewFinish.Slot.floor, .wall] {
-                            if let id = saved["\(room.id).\(slot.rawValue)"],
-                               let finish = PreviewFinish.finish(id), finish.slot == slot {
-                                loaded.change(finish, roomID: room.id)
-                            }
-                        }
-                    }
-                }
+                selectedRoom = loaded?.walkthroughRooms.first?.id ?? ""
                 refreshFinishes()
             }
             .onDisappear { walkTask?.cancel() }
@@ -187,6 +198,7 @@ struct ReferenceFloorScreen: View {
         guard let finish = PreviewFinish.finish(id), let floor,
               floor.finishID(finish.slot, roomID: selectedRoom) != id else { return }
         floor.change(finish, roomID: selectedRoom)
+        if let pose { floor.refreshMirrors(at: pose) }
         var saved = store.value([String: String].self, for: finishKey) ?? [:]
         saved["\(selectedRoom).\(finish.slot.rawValue)"] = id
         store.set(saved, for: finishKey)
@@ -223,6 +235,7 @@ struct ReferenceFloorScreen: View {
             zoom = 0
             pose = floor.entrance
             displayPose(floor)
+            floor.refreshMirrors(at: floor.entrance)
             selectedRoom = floor.walkthroughRooms.first?.id ?? ""
             leg = 0
             return
@@ -235,6 +248,7 @@ struct ReferenceFloorScreen: View {
             let seconds = max(0.8, distance / 0.72, turn / 82)
             var elapsed = 0.0
             var last = CACurrentMediaTime()
+            var mirrorTaken = last
             while elapsed < seconds {
                 do { try await Task.sleep(for: .milliseconds(16)) } catch { return }
                 let now = CACurrentMediaTime()
@@ -248,8 +262,15 @@ struct ReferenceFloorScreen: View {
                 lookPitch *= ease
                 zoom *= ease
                 displayPose(floor)
+                // A mirror in view follows the walker a few times a second.
+                if now - mirrorTaken > 0.25, let pose {
+                    mirrorTaken = now
+                    floor.refreshMirrors(at: pose)
+                }
             }
             pose = stop
+            // And is exact wherever the walker stops.
+            floor.refreshMirrors(at: stop)
         }
         selectedRoom = next.room.id
         leg += 1

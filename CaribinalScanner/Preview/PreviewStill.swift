@@ -13,6 +13,15 @@ enum PreviewStill {
     /// Renders the room from a stop. The live camera is not moved.
     static func render(_ room: PreviewRoomScene, from stop: PreviewCamera.Stop, width: Int = 1600,
                        supersample: Int = 2) -> CGImage? {
+        // The renderer's drawing surfaces are large: about 300 MB for a
+        // 1440 wide still, measured on a Mac. Without a pool of its own,
+        // stills taken in a row keep all of theirs until the caller
+        // returns to the run loop, and three of them held about 1 GB.
+        autoreleasepool { draw(room, from: stop, width: width, supersample: supersample) }
+    }
+
+    private static func draw(_ room: PreviewRoomScene, from stop: PreviewCamera.Stop, width: Int,
+                             supersample: Int) -> CGImage? {
         guard let device = MTLCreateSystemDefaultDevice(), let liveCamera = room.cameraNode.camera else { return nil }
         let height = Int((Double(width) / PreviewCamera.aspect).rounded())
         let eye = SCNNode()
@@ -20,17 +29,21 @@ enum PreviewStill {
         PreviewRoomScene.aim(eye.camera, for: stop)
         eye.simdPosition = SIMD3(Float(stop.eye.x), Float(stop.eye.y), Float(stop.eye.z))
         eye.simdOrientation = PreviewRoomScene.orientation(headingDegrees: stop.headingDegrees, pitchDegrees: stop.pitchDegrees)
-        room.scene.rootNode.addChildNode(eye)
+        // A still shows the mirror as it is from where the still is taken,
+        // in the finishes being drawn. The live view gets its own back after.
+        room.refreshMirror(seenFrom: eye.simdPosition)
+        room.drawnScene.rootNode.addChildNode(eye)
         // From overhead the ceiling, bulkheads and light trims step aside.
         let ceilingWasHidden = room.overheadHidden.isHidden
         room.overheadHidden.isHidden = stop.kind == .overhead
         defer {
             eye.removeFromParentNode()
             room.overheadHidden.isHidden = ceilingWasHidden
+            room.refreshMirror()
         }
 
         let renderer = SCNRenderer(device: device, options: nil)
-        renderer.scene = room.scene
+        renderer.scene = room.drawnScene
         renderer.pointOfView = eye
         renderer.autoenablesDefaultLighting = false
         let size = CGSize(width: width * supersample, height: height * supersample)

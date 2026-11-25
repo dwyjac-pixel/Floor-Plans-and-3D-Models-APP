@@ -48,6 +48,7 @@ struct PreviewSceneTests {
         swapsChangeOnlyMaterials(room)
         cameraConventions(room)
         pictures(room)
+        mirror()
         savedChoices()
         bathroomOptions(room)
         kitchenFixtures()
@@ -259,6 +260,14 @@ struct PreviewSceneTests {
         let level = PreviewRoomScene.orientation(headingDegrees: 90, pitchDegrees: 0)
         expect(simd_distance(simd_act(level, SIMD3<Float>(0, 0, -1)), SIMD3(0, 0, 1)) < 1e-4, "heading 90 looks along +z")
         expect(simd_distance(simd_act(level, SIMD3<Float>(0, 1, 0)), SIMD3(0, 1, 0)) < 1e-4, "standing views are upright")
+        // The lens keeps what it is asked to keep: depth 0 at 0.05 m and 1
+        // at 60 m, which is how SceneKit reads a projection it is handed.
+        if let stop = room.stops.first {
+            let lens = PreviewRoomScene.projection(for: stop)
+            let nearest = lens * SIMD4<Float>(0, 0, -0.05, 1), farthest = lens * SIMD4<Float>(0, 0, -60, 1)
+            expect(abs(nearest.z / nearest.w) < 1e-4 && abs(farthest.z / farthest.w - 1) < 1e-4,
+                   "the near plane is at 0.05 m and the far plane at 60 m")
+        }
         if let doorway = room.stops.first(where: { $0.kind == .doorway }) {
             room.place(at: doorway)
             expect(!room.overheadHidden.isHidden, "ceiling shows from the doorway")
@@ -301,6 +310,112 @@ struct PreviewSceneTests {
                "an unknown light is refused, so the caller can fall back")
         // Every kind can be placed: the newer ones are saved beside rooms.json.
         expect(Set(CornerRoom.Fixture.Kind.placeable) == Set(CornerRoom.Fixture.Kind.allCases), "every kind is offered in the editor")
+    }
+
+    // MARK: Mirror
+
+    /// The glass shows what a real mirror would from where the viewer
+    /// stands. What each part of the glass should show is worked out here
+    /// from the drawing alone: a ray from the viewer, bounced off the
+    /// glass, lands either on the west wall's paint or in its doorway
+    /// (0.688 to 1.450 m along the wall, 1.930 m high).
+    static func mirror() {
+        let room = PreviewRoomScene(layout: PreviewLayout(room: PreviewReferenceRoom.bathroom()),
+                                    library: PreviewFinishLibrary(textureSize: 256))
+        expect(room.mirrorMaterial == nil, "a room nobody has looked at has taken no reflection")
+        guard let mount = room.vanityMount, let glass = mount.glass,
+              let inside = room.stops.first(where: { $0.kind == .inside }) else {
+            expect(false, "the reference bathroom has a mirror and an inside view")
+            return
+        }
+        func world(_ x: Float, _ y: Float) -> SIMD3<Float> { mount.node.simdConvertPosition(SIMD3(x, y, glass.z), to: nil) }
+        func picture() -> (image: CGImage, bytes: [UInt8])? {
+            guard let contents = room.mirrorMaterial?.diffuse.contents,
+                  CFGetTypeID(contents as CFTypeRef) == CGImage.typeID else { return nil }
+            let image = contents as! CGImage
+            return (image, pixels(image))
+        }
+        let eye = SIMD3<Float>(Float(inside.eye.x), Float(inside.eye.y), Float(inside.eye.z))
+        room.refreshMirror(seenFrom: eye)
+        guard let first = picture(), let material = room.mirrorMaterial else {
+            expect(false, "the mirror takes a picture of the room")
+            return
+        }
+        expect(room.shownFinishes[.mirror] == "fixed.mirror", "the mirror is still the mirror finish")
+        expect(abs(Float(first.image.width) / Float(first.image.height) - (glass.x1 - glass.x0) / (glass.y1 - glass.y0)) < 0.01,
+               "the reflection has the shape of the glass")
+
+        let corner = world(glass.x0, glass.y0)
+        var facing = simd_normalize(simd_cross(world(glass.x1, glass.y0) - corner, world(glass.x0, glass.y1) - corner))
+        if simd_dot(eye - corner, facing) < 0 { facing = -facing }
+        let behind = eye - facing * (2 * simd_dot(eye - corner, facing))
+        let onto = simd_float4x4(material.diffuse.contentsTransform)
+        /// What the glass shows at a point across it, and where its ray lands on the west wall.
+        func shown(_ bytes: [UInt8], _ image: CGImage, across: Float) -> (landsAt: SIMD3<Float>, colour: SIMD3<Int>) {
+            let x = glass.x0 + (glass.x1 - glass.x0) * across, y = (glass.y0 + glass.y1) / 2
+            let point = world(x, y)
+            let lands = behind + (point - behind) * (-behind.x / (point.x - behind.x))
+            let place = onto * SIMD4(x - glass.x0, y - glass.y0, 0, 1)
+            let column = min(image.width - 1, max(0, Int(place.x * Float(image.width))))
+            let row = min(image.height - 1, max(0, Int(place.y * Float(image.height))))
+            let i = (row * image.width + column) * 4
+            return (lands, SIMD3(Int(bytes[i]), Int(bytes[i + 1]), Int(bytes[i + 2])))
+        }
+        var sawWall = false, sawDoorway = false, wallAcross: Float = 0
+        for across: Float in [0.1, 0.25, 0.4, 0.6, 0.75, 0.9] {
+            let (lands, colour) = shown(first.bytes, first.image, across: across)
+            guard lands.y > 0.3, lands.y < 1.85 else { continue }
+            if lands.z > 0.79, lands.z < 1.35 {
+                sawDoorway = true
+                expect(colour.max() < 70, "\(across) across the glass reflects the open doorway, found \(colour)")
+            } else if lands.z > 0.05, lands.z < 0.56 {
+                sawWall = true
+                wallAcross = across
+                expect(colour.min() > 110, "\(across) across the glass reflects the painted wall, found \(colour)")
+            }
+        }
+        expect(sawWall && sawDoorway, "the inside view sees both the wall and the doorway in the glass")
+
+        // Nothing changed and nobody moved: the picture is kept.
+        room.refreshMirror(seenFrom: eye)
+        expect(picture()?.image === first.image, "an unchanged room keeps its reflection")
+        // Behind the glass there is nothing to see.
+        room.refreshMirror(seenFrom: corner - facing * 0.5)
+        expect(picture()?.image === first.image && room.mirrorEye == eye, "a viewer behind the glass takes no reflection")
+        // A new paint is in the glass once the mirror is taken again.
+        var painted = room.selection
+        painted.overrides[.wall] = PreviewFinish.finishes(for: .wall).first { $0.id != room.shownFinishes[.wall] }?.id
+        let wallBefore = shown(first.bytes, first.image, across: wallAcross).colour
+        room.apply(painted)
+        expect(room.mirrorIsStale && room.shownFinishes[.mirror] == "fixed.mirror", "a finish change leaves the glass in place and out of date")
+        room.refreshMirror(seenFrom: eye)
+        if let second = picture() {
+            let wallAfter = shown(second.bytes, second.image, across: wallAcross).colour
+            expect(wallAfter != wallBefore, "the glass shows the new paint (\(wallBefore) then \(wallAfter))")
+        } else {
+            expect(false, "the mirror takes a picture after a finish change")
+        }
+        // Two vanities: the reflection belongs to the glass it was taken
+        // through, so only that mirror wears it.
+        var pair = PreviewReferenceRoom.bathroom()
+        pair.corners = [.init(x: 10, z: 20), .init(x: 14.2, z: 20), .init(x: 14.2, z: 21.6), .init(x: 10, z: 21.6)]
+        pair.fixtures = pair.fixtures.filter { $0.kind == .vanity }
+            + [.init(kind: .vanity, x: 12.6, z: 20.275, widthMeters: 0.760, depthMeters: 0.550)]
+        let double = PreviewRoomScene(layout: PreviewLayout(room: pair), library: PreviewFinishLibrary(textureSize: 256))
+        double.refreshMirror(seenFrom: SIMD3(1.8, 1.35, 1.3))
+        var worn = 0, plain = 0
+        double.scene.rootNode.enumerateHierarchy { node, _ in
+            guard let material = node.geometry?.firstMaterial, material.name == "fixed.mirror" else { return }
+            if material === double.mirrorMaterial { worn += 1 } else { plain += 1 }
+        }
+        expect(double.layout.problems.isEmpty && double.mirrorMaterial != nil && worn == 1 && plain == 1,
+               "with two vanities one mirror reflects and the other stays plain (found \(worn) and \(plain), problems \(double.layout.problems))")
+        // Standing somewhere else is a different reflection.
+        if let doorway = room.stops.first(where: { $0.kind == .doorway }) {
+            let kept = picture()?.image
+            room.refreshMirror(seenFrom: SIMD3(Float(doorway.eye.x), Float(doorway.eye.y), Float(doorway.eye.z)))
+            expect(picture()?.image !== kept, "a viewer who has moved gets a new reflection")
+        }
     }
 
     // MARK: Stills

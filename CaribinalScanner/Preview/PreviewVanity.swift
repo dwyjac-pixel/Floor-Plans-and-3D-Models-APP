@@ -305,14 +305,13 @@ extension PreviewRoomScene {
                 }
                 // A fine dark line sets the glass off from its frame.
                 dark.flat(inner.map { $0 - forward * 0.002 }, normal: forward)
-                // The glass leans a few degrees toward the ceiling at its head and
-                // the floor at its foot, so it picks up a soft gradient of the room
-                // the way a mirror does and never reads as a flat grey card.
-                let line: Float = 0.002, rows = 6
-                let heights = (0...rows).map { low + rim + line + (high - low - 2 * rim - 2 * line) * Float($0) / Float(rows) }
-                let lean = (0...rows).map { simd_normalize(forward + up * (Float($0) / Float(rows) - 0.5) * 0.6) }
-                glass.band(heights.map { V3(x0 + rim + line, $0, proud - 0.001) }, lean,
-                           heights.map { V3(x1 - rim - line, $0, proud - 0.001) }, lean)
+                // Flat glass, measured from its lower left corner. What it
+                // shows is taken from the room itself (see PreviewMirror).
+                let inset = rim + 0.002
+                let pane = (x0: x0 + inset, x1: x1 - inset, y0: low + inset, y1: high - inset, z: proud - 0.001)
+                glass.rect(origin: V3(pane.x0, pane.y0, pane.z), u: V3(pane.x1 - pane.x0, 0, 0),
+                           v: V3(0, pane.y1 - pane.y0, 0), facing: forward)
+                if vanityMount?.node === node, vanityMount?.glass == nil { vanityMount?.glass = pane }
             }
         }
 

@@ -14,8 +14,9 @@ Built and working:
 - **Finishes.** Two looks, Warm Modern and Bright Neutral, plus one at a time changes for floor, shower or tub surround (prefab by default, or tile), paint, vanity, counter and hardware.
 - **Bathroom fixtures to choose.** A ceiling fixture, an above-mirror light where it fits under the ceiling or bulkhead, or pot lights; a plain or lighted mirror. The choice changes which fixtures are drawn. The room is lit the same way for every choice, so finishes are always compared under one light.
 - **Views.** Doorway, Inside and Overhead stops worked out from the plan, with a glide between the two standing stops.
+- **A mirror that reflects.** The vanity mirror shows the room as a real mirror would from where the viewer stands, in the finishes on screen, and the hall through the doorway when the room is part of a floor. It is one small picture taken from the viewer's position mirrored through the wall, not a reflection pass on every frame. It is taken again when the viewer arrives somewhere or a finish changes (`Preview/PreviewMirror.swift`).
 - **Pictures.** A captioned still, a comparison of the looks from one camera, and saved Option A and Option B with a two page PDF.
-- **A kitchen.** Cabinets, sink, dishwasher, stove, microwave and refrigerator as finished models. Sample only for now: see Held back.
+- **A kitchen.** Cabinets, sink, dishwasher, stove, microwave and refrigerator as finished models, from the sample or from kitchen fixtures placed in the plan editor.
 - **A saved floor walkthrough.** Rooms of a proposed revision that share a doorway are joined at their drawn positions and walked through, with floor and paint chosen per room. A room with no shared doorway is named, not drawn.
 - **Samples.** A sample bathroom, a sample kitchen and a sample floor. The sample floor is a staged set (its hall, living room and bedroom are placed by hand) and says so on screen.
 - **Choices are kept with the project** in `preview_choices.json` in the project folder: synced, backed up, removed with the project. A room reopens the way it was left.
@@ -28,7 +29,7 @@ How kitchens are saved so an older device cannot lose them:
 - Rules in the save path: a fixture leaves the sidecar only when the rooms being saved were read together with that exact sidecar; a sidecar that is still downloading or unreadable is never written over; a saved revision never loses fixtures on a later save; a kind from a later version is carried through untouched.
 - `sh Tests/test-fixture-sidecar.sh` covers this. It builds the real 1.0.2 room model from git, lets it read, edit and rewrite a project saved by this version, and checks nothing saved here is lost.
 
-Not built yet: rooms with interior walls, tubs as finished models, any link to the quote, mirror reflections, carpet or plank floors in a walkthrough (every floor is tile), separate faucet and door handle finishes, stairs.
+Not built yet: rooms with interior walls, tubs as finished models, any link to the quote, separate faucet and door handle finishes, stairs.
 
 ## Rules
 
@@ -163,6 +164,9 @@ Only numbers that were actually measured, with where.
 | Load: prepare | 1.47 s | same |
 | Look swap, tap to frame | 43 ms | same |
 | Glide, 132 frames | worst 106 ms, 1 frame over 33 ms | same |
+| One 1440 wide still, memory held while it is drawn | about 300 MB above the app at rest | Mac, optimised build |
+| Three such stills in a row (Compare Looks) | about 300 MB, was about 820 MB | same |
+| Twenty mirror reflections in a row | no growth, was about 570 MB; 2.5 ms each | same |
 
 Simulator and debug numbers are not performance claims. Nothing has been measured on a physical device. No claim about smoothness should be published until gates B4, B5 and C1 are read on a named iPhone and iPad. The readout for that is built in: tap the picture three times.
 
@@ -233,20 +237,47 @@ Fixed:
 7. **Four fixture kinds would be lost on 1.0.2.** First held out of the editor, then made safe: they are saved beside the files 1.0.2 rewrites (see Where it stands) and are offered in the editor again.
 8. Smaller: no walkthrough on Existing Conditions; Show Whole Room is now Wide View; the suite check counts a sink cabinet or microwave as kitchen fixtures; cabinet finish names no longer say vanity in a kitchen; the saved floor path now has tests.
 
-Open, found but not fixed:
+Second pass, the same day. Everything left open by the first pass, plus what turned up on the way:
 
-- **Sample floor: leaving the kitchen**, the camera turns into the open kitchen door and the picture is a blank grey panel for about a second.
-- **Plan editor, stacked items: fixed.** A tap now picks the smallest fixture under the finger, and a microwave or short upper stacked over another item no longer prints its name over it.
-- **A saved floor ignores the saved floor type.** A bedroom saved as carpet is drawn with tile.
-- **The runtime review did not finish.** `FinishedPreviewScreen.swift` (about 700 lines), the PDF path and memory use on older phones have not been reviewed.
-- **iPad was not run.** The 4:3 fix was checked on an iPhone simulator only.
+9. **Leaving the sample kitchen.** The route out passed through the open door leaf, which filled the picture for about a second. The leaf of a door the tour walks through is no longer drawn. Tested.
+10. **A saved floor ignored the floor type.** Each room now opens with the floor its plan names: tile, vinyl plank, laminate, hardwood, carpet or concrete. A look change keeps a floor the plan names. Tested.
+11. **Plan editor, stacked items.** A tap picks the smallest fixture under the finger, and a microwave or short upper stacked over another item no longer prints its name over it.
+12. **The mirror was a flat silver panel.** It now reflects (see Where it stands). What each part of the glass should show is worked out in the test from the drawing alone, and a mirror in a joined floor is tested to show the hall through its doorway.
+13. **The camera cut away anything nearer than 10 cm, not the 5 cm written.** SceneKit reads a projection it is handed with depth from 0 to 1; ours was written for -1 to 1, which puts the near plane at twice the distance. Found because it blanked the mirror. Both lenses are now written the way SceneKit reads them. The locked doorway pair is unchanged: 0.017 percent of pixels move by more than 2 levels of 255.
+
+The runtime review of `FinishedPreviewScreen.swift`, the pictures and the PDF is finished. Found and fixed:
+
+14. **Compare Looks took its pictures of the room on screen.** It showed each look there in turn, held the app still while it did, and kept every picture's drawing surfaces until it finished: about 820 MB for three, measured on a Mac. The pictures are now taken of a second copy of the room, off screen and off the main thread, and each still frees its surfaces before the next. A shared picture is captioned and written off the main thread.
+15. **A second view tap during a glide** set off from where the first glide was going, not from where the camera was, so the path that had been checked was not the path flown. The camera now finishes its move, then goes on to the view asked for.
+16. **A room opened in the starting look, then changed** to the one it was left in. It is now built the way it was left, mirror included, before the first frame.
+17. **The sample kitchen picked up the sample bathroom's choices**, because both samples kept them under one name.
+18. **A floor's saved finishes were drawn on the main thread** after the floor appeared. They are now part of the build.
+19. **Mirror reflections kept their renderer each time.** Twenty in a row held about 570 MB on a Mac. One renderer is kept per mirror; twenty now add nothing.
+
+iPad, run on the iPad Pro 13 inch simulator, upright and sideways, room preview and sample floor:
+
+20. The picture keeps its 4:3 shape in both, and the mirror works in both.
+21. **Sideways, the walkthrough picture was small between two wide black bars.** On a wide screen the picture now stands beside the controls and takes the full height, as the room preview does.
+22. **Upright, the room preview used about three quarters of the width.** It now takes the full width, up to six tenths of the height.
+23. Turning the device no longer builds the picture view again.
+
+Looked at and left as they are:
+
+- A 1440 wide still holds about 300 MB while it is drawn (Mac measure), because it is drawn at twice its size. One at a time this is within reach of current phones, but it has not been read on one. If an older phone runs short, draw stills at 1.5 times instead of twice.
+- The comparison PDF is made on the main thread. It is a plan picture and two stills, and was quick in the simulator.
+- The walkthrough shows a black stage for a moment between Preparing floor and its first frame.
+
+Still open:
+
+- **Nothing has been run on a physical device.** Timings, memory and the 4:3 picture are simulator or Mac results.
+- **Sync between two devices** (choices and the fixtures file through iCloud) has not been tried with real devices.
 
 ## Known gaps
 
 Stated plainly so nobody is surprised:
 
 - It is a clean illustration, not a photograph. There is no real bounced light.
-- The mirror is a flat silver panel. It does not reflect the room.
+- The mirror is the only surface that reflects. Glass, chrome and tile do not. The mirror shows the room, never a person. During a glide in the room preview it shows the view from where the glide began until the camera lands; in a walkthrough it follows the walker about four times a second.
 - With the prefab surround as the default, the two looks no longer differ in the shower walls.
 - The vanity sits right inside the door in the reference room, so the doorway view shows more counter than a photographer would choose.
 - Rooms with interior walls are blocked. Dwayne's saved plans are whole basement scans, so none of them can be previewed yet; each room has to be saved as its own room.
@@ -256,8 +287,8 @@ Stated plainly so nobody is surprised:
 
 ```
 sh Tests/test-preview-geometry.sh          # fidelity, camera, catalog, captions
-sh Tests/test-preview-scene.sh             # the built room, swaps, light budget, blown whites, saved choices
-sh Tests/test-preview-floor.sh             # sample floor and a saved floor joined through a doorway
+sh Tests/test-preview-scene.sh             # the built room, swaps, light budget, blown whites, the mirror, saved choices
+sh Tests/test-preview-floor.sh             # sample floor, a saved floor joined through a doorway, a joined mirror
 sh Tests/test-fixture-sidecar.sh           # newer fixture kinds survive a device on 1.0.2
 sh Tests/render-preview-stills.sh out/     # both looks from every stop, on the Mac
 sh Tests/render-doorway-pair.sh out/       # the locked doorway pair with a manifest

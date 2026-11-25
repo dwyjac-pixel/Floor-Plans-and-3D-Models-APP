@@ -59,6 +59,8 @@ struct PreviewVanityMount {
     let bottom: Float
     let top: Float
     let clearance: Float
+    /// The glass inside the frame, in the vanity's own space.
+    var glass: (x0: Float, x1: Float, y0: Float, y1: Float, z: Float)?
 
     // 60 mm fixture plus 40 mm mounting gap and 20 mm headroom.
     var fitsLight: Bool { clearance - top >= 0.12 }
@@ -89,6 +91,8 @@ extension PreviewRoomScene {
                                    (!vanityClearanceUncertain || clearanceConfirmed)) else { return }
         lightStyle = style
         mirrorStyle = mirror
+        // The fixtures drawn change, so what the mirror shows is out of date.
+        mirrorIsStale = true
         // The calibrated ceiling spots light the room for every choice, so
         // a floor or a paint always looks the same whichever fixture is
         // picked and two options are compared under one light. The choice

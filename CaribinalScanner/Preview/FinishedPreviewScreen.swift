@@ -58,6 +58,12 @@ final class FinishedPreviewModel: ObservableObject {
     @Published private(set) var room: PreviewRoomScene?
     @Published private(set) var selection = PreviewFinish.Selection()
     @Published private(set) var stop: PreviewCamera.Kind = .doorway
+    /// The view last asked for. The camera finishes the move it is making
+    /// before it sets off for this one.
+    @Published private(set) var wantedStop: PreviewCamera.Kind = .doorway
+    @Published private(set) var moving = false
+    /// What the room was showing when it was last open, if anything.
+    private let reopened: BathroomFinishOption?
     @Published private(set) var readout = PreviewReadout()
     @Published private(set) var lightStyle = PreviewBathroomLight.potLights
     @Published private(set) var mirrorStyle = PreviewBathroomMirror.plain
@@ -76,28 +82,42 @@ final class FinishedPreviewModel: ObservableObject {
     init(source: FinishedPreviewSource) {
         self.source = source
         layout = PreviewLayout(room: source.room)
-        selection = .starting(for: layout)
+        reopened = BathroomFinishOptions.load(from: source.store, key: source.comparisonKey).current
+        selection = reopened?.selection ?? .starting(for: layout)
+        vanityClearanceConfirmed = reopened?.clearanceConfirmed ?? false
         phase = layout.problems.isEmpty ? .loading : .blocked
     }
 
     var stops: [PreviewCamera.Stop] { room?.stops ?? [] }
     var lookName: String { selection.overrides.isEmpty ? selection.look.name : "\(selection.look.name), customised" }
 
-    /// Builds the room and its starting look off the main thread. The
-    /// picture stays covered until the renderer draws the first frame.
+    /// Builds the room off the main thread, in the finishes and lighting
+    /// it was left in, so it never opens in one look and then changes to
+    /// another. The picture stays covered until the renderer draws the
+    /// first frame.
     func load() async {
         guard phase == .loading, room == nil else { return }
         let layout = layout
         let includesHallway = source.includesReferenceHallway
+        let start = selection, last = reopened
         let started = CACurrentMediaTime()
         let built = await Task.detached(priority: .userInitiated) { () -> (PreviewRoomScene, PreviewHallway?) in
             let library = PreviewFinishLibrary(textureSize: 512)
-            let room = PreviewRoomScene(layout: layout, selection: .starting(for: layout), library: library)
-            return (room, includesHallway ? PreviewHallway(room: room) : nil)
+            let room = PreviewRoomScene(layout: layout, selection: start, library: library)
+            if let last, room.isBathroom {
+                room.setBathroomLighting(last.light, mirror: last.mirror, clearanceConfirmed: last.clearanceConfirmed)
+            }
+            let hallway = includesHallway ? PreviewHallway(room: room) : nil
+            // The first reflection, taken here so the first frame has it.
+            room.refreshMirror()
+            return (room, hallway)
         }.value
         readout.buildSeconds = CACurrentMediaTime() - started
         firstFrameStarted = CACurrentMediaTime()
-        if let first = built.0.stops.first { stop = first.kind }
+        if let first = built.0.stops.first {
+            stop = first.kind
+            wantedStop = first.kind
+        }
         hallway = built.1
         room = built.0
         lightStyle = built.0.lightStyle
@@ -122,8 +142,9 @@ final class FinishedPreviewModel: ObservableObject {
     }
 
     func chooseLighting(_ style: PreviewBathroomLight, mirror: PreviewBathroomMirror) {
-        guard let room, phase == .ready else { return }
+        guard let room, room.isBathroom, phase == .ready else { return }
         room.setBathroomLighting(style, mirror: mirror, clearanceConfirmed: vanityClearanceConfirmed)
+        room.refreshMirror()
         lightStyle = room.lightStyle
         mirrorStyle = room.mirrorStyle
     }
@@ -167,6 +188,8 @@ final class FinishedPreviewModel: ObservableObject {
             self.readout.swapMilliseconds = elapsed
             self.readout.swaps += 1
             self.logger.info("Finish swap \(elapsed, format: .fixed(precision: 1)) ms")
+            // After the swap has been drawn and timed: the mirror in the new finishes.
+            self.room?.refreshMirror()
         }
         selection = next
         room.apply(next)
@@ -175,7 +198,7 @@ final class FinishedPreviewModel: ObservableObject {
     // MARK: Camera
 
     func walkFromHallway() async {
-        guard phase == .ready, !hallwayPlaying, let room, let hallway else { return }
+        guard phase == .ready, !hallwayPlaying, !moving, let room, let hallway else { return }
         hallwayPlaying = true
         defer { hallwayPlaying = false }
         room.place(at: hallway.start)
@@ -187,36 +210,51 @@ final class FinishedPreviewModel: ObservableObject {
         try? await Task.sleep(for: .seconds(duration + 0.15))
         let result = timing.endGlide()
         stop = hallway.end.kind
+        wantedStop = stop
+        room.refreshMirror()
         readout.glideFrames = result.frames
         readout.glideWorstMilliseconds = result.worst
         readout.glideSlowFrames = result.slow
     }
 
     func go(to kind: PreviewCamera.Kind) {
-        guard phase == .ready, !hallwayPlaying, let room, kind != stop,
-              let target = room.stops.first(where: { $0.kind == kind }) else { return }
+        guard phase == .ready, !hallwayPlaying else { return }
+        wantedStop = kind
+        // A second move started during a glide would set off from where
+        // the first one was going, not from where the camera is, and could
+        // cross a wall. The camera finishes its move, then goes on.
+        if !moving { moveToWantedStop() }
+    }
+
+    private func moveToWantedStop() {
+        guard let room, wantedStop != stop,
+              let target = room.stops.first(where: { $0.kind == wantedStop }) else { return }
         let from = room.currentStop
-        stop = kind
-        if let from, PreviewCamera.glideIsClear(from: from, to: target, in: layout) {
-            let duration = 1.4
-            timing.beginGlide()
-            room.place(at: target, duration: duration)
-            Task {
+        stop = target.kind
+        moving = true
+        Task {
+            if let from, PreviewCamera.glideIsClear(from: from, to: target, in: layout) {
+                let duration = 1.4
+                timing.beginGlide()
+                room.place(at: target, duration: duration)
                 try? await Task.sleep(for: .seconds(duration + 0.15))
                 let result = timing.endGlide()
+                // The viewer has arrived: the mirror as seen from here.
+                room.refreshMirror()
                 readout.glideFrames = result.frames
                 readout.glideWorstMilliseconds = result.worst
                 readout.glideSlowFrames = result.slow
                 logger.info("Glide \(result.frames) frames, worst \(result.worst, format: .fixed(precision: 1)) ms, \(result.slow) over 33 ms")
-            }
-        } else {
-            // No clear path (or a change of lens): fade through, never fly through a wall.
-            Task {
+            } else {
+                // No clear path (or a change of lens): fade through, never fly through a wall.
                 withAnimation(.easeIn(duration: 0.14)) { stageOpacity = 0 }
                 try? await Task.sleep(for: .seconds(0.15))
                 room.place(at: target)
                 withAnimation(.easeOut(duration: 0.2)) { stageOpacity = 1 }
+                try? await Task.sleep(for: .seconds(0.2))
             }
+            moving = false
+            moveToWantedStop()
         }
     }
 
@@ -234,7 +272,7 @@ final class FinishedPreviewModel: ObservableObject {
                              look: look, layout: layout, useImperial: useImperial)
     }
 
-    private func write(_ image: CGImage, named name: String) -> Picture? {
+    private nonisolated static func write(_ image: CGImage, named name: String) -> Picture? {
         guard let data = PreviewStill.png(image) else { return nil }
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("FinishedPreview", isDirectory: true)
         let safe = name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
@@ -248,26 +286,46 @@ final class FinishedPreviewModel: ObservableObject {
         }
     }
 
-    /// A captioned still of what is on screen now.
-    func picture(useImperial: Bool) -> Picture? {
+    /// A captioned still of what is on screen now. The room on screen is
+    /// drawn once more here; the caption and the file are made off the
+    /// main thread.
+    func picture(useImperial: Bool) async -> Picture? {
         guard phase == .ready, let room, let stop = room.currentStop,
-              let shot = PreviewStill.render(room, from: stop, width: 1440),
-              let final = PreviewStill.captioned(shot, lines: captionLines(look: lookName, useImperial: useImperial)) else { return nil }
-        return write(final, named: "\(source.roomName) \(lookName) \(stop.kind.title)")
+              let shot = PreviewStill.render(room, from: stop, width: 1440) else { return nil }
+        let lines = captionLines(look: lookName, useImperial: useImperial)
+        let name = "\(source.roomName) \(lookName) \(stop.kind.title)"
+        return await Task.detached(priority: .userInitiated) {
+            PreviewStill.captioned(shot, lines: lines).flatMap { Self.write($0, named: name) }
+        }.value
     }
 
     /// The same view in every curated look. Camera, lens, exposure and
     /// lights are identical; only the finishes differ.
-    func comparison(useImperial: Bool) -> [Picture] {
+    ///
+    /// The pictures are taken of a second copy of the room, off screen and
+    /// off the main thread. Taking them of the room on screen showed each
+    /// look there in turn and held the app still while it did.
+    func comparison(useImperial: Bool) async -> [Picture] {
         guard phase == .ready, let room, let stop = room.currentStop else { return [] }
-        let shown = selection
-        defer { room.apply(shown) }
-        return PreviewFinish.looks.compactMap { look in
-            room.apply(.starting(for: layout, lookID: look.id))
-            guard let shot = PreviewStill.render(room, from: stop, width: 1440),
-                  let final = PreviewStill.captioned(shot, lines: captionLines(look: look.name, useImperial: useImperial)) else { return nil }
-            return write(final, named: "\(source.roomName) \(look.name) \(stop.kind.title)")
+        let layout = layout, library = room.library, withHallway = hallway != nil
+        let light = room.lightStyle, mirror = room.mirrorStyle, confirmed = vanityClearanceConfirmed
+        let wanted = PreviewFinish.looks.map { look in
+            (look: look.id, lines: captionLines(look: look.name, useImperial: useImperial),
+             name: "\(source.roomName) \(look.name) \(stop.kind.title)")
         }
+        return await Task.detached(priority: .userInitiated) {
+            // Ready materials are shared with the room on screen, so the
+            // copy costs its shapes only.
+            let copy = PreviewRoomScene(layout: layout, selection: .starting(for: layout), library: library)
+            if copy.isBathroom { copy.setBathroomLighting(light, mirror: mirror, clearanceConfirmed: confirmed) }
+            if withHallway { _ = PreviewHallway(room: copy) }
+            return wanted.compactMap { item -> Picture? in
+                copy.apply(.starting(for: layout, lookID: item.look))
+                guard let shot = PreviewStill.render(copy, from: stop, width: 1440),
+                      let final = PreviewStill.captioned(shot, lines: item.lines) else { return nil }
+                return Self.write(final, named: item.name)
+            }
+        }.value
     }
 }
 
@@ -380,16 +438,18 @@ struct FinishedPreviewScreen: View {
                     blocked
                 } else {
                     GeometryReader { proxy in
-                        if proxy.size.width > proxy.size.height {
-                            HStack(spacing: 0) {
-                                stage.frame(maxHeight: .infinity).background(Color.black)
-                                controls.frame(width: min(380, proxy.size.width * 0.4))
-                            }
-                        } else {
-                            VStack(spacing: 0) {
-                                stage
-                                controls
-                            }
+                        // One picture view for both shapes of screen, so
+                        // turning the device does not build it again.
+                        let wide = proxy.size.width > proxy.size.height
+                        let layout = wide ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+                        layout {
+                            // Upright, the picture takes the full width, up
+                            // to six tenths of the height on a tall tablet.
+                            stage.frame(maxHeight: wide ? .infinity : nil)
+                                .frame(height: wide ? nil : min(proxy.size.height * 0.6, proxy.size.width / PreviewCamera.aspect))
+                                .frame(maxWidth: .infinity)
+                                .background(Color.black, ignoresSafeAreaEdges: [])
+                            controls.frame(width: wide ? min(380, proxy.size.width * 0.4) : nil)
                         }
                     }
                 }
@@ -436,11 +496,9 @@ struct FinishedPreviewScreen: View {
             }
         }
         .task { await model.load() }
+        // The room reopens the way it was left (the model builds it that
+        // way), and remembers every change.
         .onAppear { finishOptions = BathroomFinishOptions.load(from: model.source.store, key: model.source.comparisonKey) }
-        // The room reopens the way it was left, and remembers every change.
-        .onChange(of: model.phase) { _, phase in
-            if phase == .ready, let last = finishOptions.current { editBathroomOption(last) }
-        }
         .onChange(of: model.selection) { _, _ in rememberCurrent() }
         .onChange(of: model.lightStyle) { _, _ in rememberCurrent() }
         .onChange(of: model.mirrorStyle) { _, _ in rememberCurrent() }
@@ -453,7 +511,8 @@ struct FinishedPreviewScreen: View {
                     .accessibilityLabel(picture.title)
             }
         }
-        .sheet(isPresented: $showingComparison) { PreviewComparisonSheet(pictures: compared) }
+        // The pictures are large. They go when the sheet does.
+        .sheet(isPresented: $showingComparison, onDismiss: { compared = [] }) { PreviewComparisonSheet(pictures: compared) }
         .alert("Could Not Make the Picture", isPresented: $pictureFailed) {
             Button("OK", role: .cancel) {}
         }
@@ -505,7 +564,7 @@ struct FinishedPreviewScreen: View {
         Form {
             if model.stops.count > 1 {
                 Section("View") {
-                    Picker("View", selection: Binding(get: { model.stop }, set: { model.go(to: $0) })) {
+                    Picker("View", selection: Binding(get: { model.wantedStop }, set: { model.go(to: $0) })) {
                         ForEach(model.stops, id: \.kind) { Text($0.kind.title).tag($0.kind) }
                     }
                     .pickerStyle(.segmented)
@@ -517,6 +576,8 @@ struct FinishedPreviewScreen: View {
                             Label(model.hallwayPlaying ? "Walking from hallway…" : "Walk from Hallway",
                                   systemImage: "figure.walk")
                         }
+                        // Not while the camera is still on its way to a view.
+                        .disabled(model.moving)
                     }
                 }
             }
@@ -608,7 +669,7 @@ struct FinishedPreviewScreen: View {
         working = true
         Task {
             await Task.yield()
-            if let picture = model.picture(useImperial: useImperial) { shared = picture } else { pictureFailed = true }
+            if let picture = await model.picture(useImperial: useImperial) { shared = picture } else { pictureFailed = true }
             working = false
         }
     }
@@ -651,8 +712,7 @@ struct FinishedPreviewScreen: View {
     private func compareLooks() {
         working = true
         Task {
-            await Task.yield()
-            compared = model.comparison(useImperial: useImperial)
+            compared = await model.comparison(useImperial: useImperial)
             if compared.count == PreviewFinish.looks.count { showingComparison = true } else { pictureFailed = true }
             working = false
         }

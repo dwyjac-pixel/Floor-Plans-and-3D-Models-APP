@@ -131,6 +131,8 @@ final class PreviewReferenceFloor {
             finishes[room]?[finish.slot]?.firstMaterial = material
             if room == .hall, finish.slot == .wall { hallEntryFace?.firstMaterial = material }
         }
+        // The bathroom mirror can see the hall through its doorway.
+        bathroom.mirrorIsStale = true
     }
 
     func finishID(_ slot: PreviewFinish.Slot, in room: Room) -> String? {

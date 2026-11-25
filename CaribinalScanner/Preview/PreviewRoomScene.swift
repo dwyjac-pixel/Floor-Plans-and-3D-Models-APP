@@ -28,6 +28,20 @@ final class PreviewRoomScene {
     let potLights = SCNNode()
     let optionalLights = SCNNode()
     var vanityMount: PreviewVanityMount?
+    /// The mirror's own glass, once its reflection has been taken. It
+    /// belongs to this room alone: two rooms never share a reflection.
+    var mirrorMaterial: SCNMaterial?
+    /// True when a finish has changed since the reflection was taken.
+    var mirrorIsStale = true
+    /// Where the viewer stood when it was taken.
+    var mirrorEye: V3?
+    /// Kept between reflections so each one costs a single small picture.
+    var mirrorRenderer: SCNRenderer?
+    /// The floor this room was joined into, if it was. Its nodes live
+    /// there from then on, and `scene` is left empty.
+    private(set) weak var joinedScene: SCNScene?
+    /// The scene this room is drawn in: its own, or the floor it joined.
+    var drawnScene: SCNScene { joinedScene ?? scene }
     var lightStyle = PreviewBathroomLight.potLights
     var mirrorStyle = PreviewBathroomMirror.plain
 
@@ -58,7 +72,10 @@ final class PreviewRoomScene {
         }
         buildCamera()
         apply(selection)
-        if let first = stops.first { place(at: first) }
+        // The mirror is left blank here. Whoever shows the room takes its
+        // reflection once the room is where it will be drawn: a room built
+        // for a floor is joined first, and a test may never look at it.
+        if let first = stops.first { aimCamera(at: first, duration: 0) }
     }
 
     // MARK: Finishes
@@ -71,10 +88,37 @@ final class PreviewRoomScene {
         SCNTransaction.animationDuration = 0
         for (slot, list) in geometries {
             guard let id = resolved[slot] else { continue }
-            let material = library.material(id)
-            for geometry in list where geometry.firstMaterial !== material { geometry.materials = [material] }
+            let plain = library.material(id)
+            for geometry in list {
+                // The mirror keeps its own glass once it has a reflection.
+                let material = slot == .mirror && reflects(geometry) ? (mirrorMaterial ?? plain) : plain
+                if geometry.firstMaterial !== material { geometry.materials = [material] }
+            }
         }
         SCNTransaction.commit()
+        // What the mirror shows is the room in its old finishes until it is taken again.
+        mirrorIsStale = true
+    }
+
+    /// Whether this is the glass the reflection is taken for: the mirror
+    /// of the first vanity. A second vanity's mirror stays plain, because
+    /// the picture is only true for the glass it was taken through.
+    private func reflects(_ geometry: SCNGeometry) -> Bool {
+        guard let mount = vanityMount else { return false }
+        var found = false
+        mount.node.enumerateHierarchy { node, stop in
+            if node.geometry === geometry {
+                found = true
+                stop.pointee = true
+            }
+        }
+        return found
+    }
+
+    /// Puts the mirror's own glass on the mirror.
+    func useMirrorGlass() {
+        guard let glass = mirrorMaterial else { return }
+        for geometry in geometries[.mirror] ?? [] where reflects(geometry) { geometry.materials = [glass] }
     }
 
     /// The finish each slot is showing right now, read back from the scene.
@@ -374,6 +418,7 @@ final class PreviewRoomScene {
     func join(_ floor: SCNScene, named name: String, index: Int, bringSun: Bool) -> SCNNode {
         let group = SCNNode()
         group.name = name
+        joinedScene = floor
         let category = 1 << (index % 30 + 1)
         for child in scene.rootNode.childNodes where child !== cameraNode {
             if child.name == "lights" {
@@ -441,12 +486,17 @@ final class PreviewRoomScene {
 
     /// The lens for a stop: a 4:3 perspective with the picture slid down
     /// by the stop's shift. SceneKit takes this in place of a field of view.
+    /// SceneKit reads a projection it is handed with depth running from 0
+    /// at the near plane to 1 at the far plane, and that is how this one is
+    /// written. Written the other common way (-1 to 1) the near plane
+    /// lands at twice the distance asked for, 0.10 m here, and a wall
+    /// close beside the viewer is cut away at the edge of a wide view.
     static func projection(for stop: PreviewCamera.Stop, near: Float = 0.05, far: Float = 60) -> simd_float4x4 {
         let across = 1 / tan(Float(stop.horizontalFOV) / 2 * .pi / 180)
         return simd_float4x4(SIMD4(across, 0, 0, 0),
                              SIMD4(0, across * Float(PreviewCamera.aspect), 0, 0),
-                             SIMD4(0, -Float(stop.verticalShift), -(far + near) / (far - near), -1),
-                             SIMD4(0, 0, -2 * far * near / (far - near), 0))
+                             SIMD4(0, -Float(stop.verticalShift), -far / (far - near), -1),
+                             SIMD4(0, 0, -far * near / (far - near), 0))
     }
 
     static func aim(_ camera: SCNCamera?, for stop: PreviewCamera.Stop) {
@@ -456,6 +506,13 @@ final class PreviewRoomScene {
 
     /// Puts the one camera at a stop. With a duration it glides there.
     func place(at stop: PreviewCamera.Stop, duration: TimeInterval = 0) {
+        aimCamera(at: stop, duration: duration)
+        // A glide shows the old reflection until it lands; whoever starts
+        // one takes the mirror again when it ends.
+        if duration == 0 { refreshMirror() }
+    }
+
+    private func aimCamera(at stop: PreviewCamera.Stop, duration: TimeInterval) {
         currentStop = stop
         overheadHidden.isHidden = stop.kind == .overhead
         SCNTransaction.begin()

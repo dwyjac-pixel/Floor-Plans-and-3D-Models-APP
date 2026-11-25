@@ -21,9 +21,19 @@ protocol FloorWalkthroughScene: AnyObject {
     var assumptions: [PreviewLayout.Assumption] { get }
     func finishID(_ slot: PreviewFinish.Slot, roomID: String) -> String?
     func change(_ finish: PreviewFinish.Finish, roomID: String)
+    /// Takes again any mirror that is out of date for a walker standing
+    /// at `eye`. Cheap when nothing changed and the walker has not moved.
+    func refreshMirrors(seenFrom eye: SIMD3<Float>)
 }
 
 extension FloorWalkthroughScene {
+    /// A mirror farther off than this is in another part of the floor.
+    static var mirrorReach: Float { 5 }
+
+    func refreshMirrors(at pose: PreviewReferenceFloor.Pose) {
+        refreshMirrors(seenFrom: SIMD3(pose.x, Float(pose.y), pose.z))
+    }
+
     func placeCamera(_ pose: PreviewReferenceFloor.Pose) {
         SCNTransaction.begin()
         SCNTransaction.animationDuration = 0
@@ -51,6 +61,11 @@ extension PreviewReferenceFloor: FloorWalkthroughScene {
 
     func change(_ finish: PreviewFinish.Finish, roomID: String) {
         if let room = Room(rawValue: roomID) { change(finish, in: room) }
+    }
+
+    func refreshMirrors(seenFrom eye: SIMD3<Float>) {
+        bathroom.refreshMirror(seenFrom: eye, reach: Self.mirrorReach)
+        kitchen.refreshMirror(seenFrom: eye, reach: Self.mirrorReach)
     }
 }
 
@@ -315,5 +330,11 @@ final class SavedFloorWalkthrough: FloorWalkthroughScene {
         selection.overrides[finish.slot] = finish.id
         selections[roomID] = selection
         model.apply(selection)
+        // A mirror can see the next room through a doorway.
+        for other in models.values { other.mirrorIsStale = true }
+    }
+
+    func refreshMirrors(seenFrom eye: SIMD3<Float>) {
+        for model in models.values { model.refreshMirror(seenFrom: eye, reach: Self.mirrorReach) }
     }
 }

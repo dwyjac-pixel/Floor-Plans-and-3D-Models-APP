@@ -151,6 +151,53 @@ struct PreviewReferenceFloorTests {
             let inDoorway = point.x > 11.1 && point.x < 11.9 && point.z > 21.15 && point.z < 21.35
             precondition(inRoom || inDoorway, "route point \(point) is outside every room")
         }
-        print("Independent finishes, saved appliance placement, four door crossings, one sun per floor, and a saved floor join passed.")
+        // A mirror in a joined room reflects the floor it stands in. A
+        // bathroom opens west onto a hall. From inside it the glass
+        // shows the doorway, and through the doorway the hall: lit
+        // surfaces, not the empty dark a single room has past its door.
+        func darkShare(of floorScene: SCNScene) -> Double? {
+            var glass: SCNMaterial?
+            floorScene.rootNode.enumerateHierarchy { node, _ in
+                if let material = node.geometry?.firstMaterial, material.name == "fixed.mirror",
+                   material.lightingModel == .constant { glass = material }
+            }
+            guard let contents = glass?.diffuse.contents, CFGetTypeID(contents as CFTypeRef) == CGImage.typeID else { return nil }
+            let image = contents as! CGImage
+            var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
+            bytes.withUnsafeMutableBytes { buffer in
+                CGContext(data: buffer.baseAddress, width: image.width, height: image.height, bitsPerComponent: 8,
+                          bytesPerRow: image.width * 4, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                          bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)?
+                    .draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            }
+            var dark = 0
+            for i in stride(from: 0, to: bytes.count, by: 4) where max(bytes[i], bytes[i + 1], bytes[i + 2]) < 70 { dark += 1 }
+            return Double(dark) / Double(bytes.count / 4)
+        }
+        let ensuite = PreviewReferenceRoom.bathroom()
+        var lobby = CornerRoom(corners: [.init(x: 8.7, z: 20), .init(x: 9.9, z: 20), .init(x: 9.9, z: 21.6), .init(x: 8.7, z: 21.6)],
+                               ceilingHeightMeters: 2.134, ceilingHeightSource: .fieldMeasured)
+        lobby.openings = [.init(kind: .door, wallIndex: 1, offsetMeters: 0.688, widthMeters: 0.762, heightMeters: 1.930)]
+        let lobbyID = UUID(), bathID = UUID()
+        guard let suite = SavedFloorWalkthrough(entries: [(lobbyID, "Hall", lobby), (bathID, "Bathroom", ensuite)]) else {
+            fatalError("A hall and a bathroom that share a doorway did not join")
+        }
+        precondition(suite.walkthroughRooms.count == 2, "the hall and the bathroom join through the bathroom door")
+        precondition(darkShare(of: suite.scene) == nil, "a joined room has taken no reflection before anyone looks")
+        let standing = SIMD3<Float>(11.8, 1.35, 21.3)
+        suite.refreshMirrors(seenFrom: standing)
+        guard let joinedDark = darkShare(of: suite.scene) else { fatalError("A mirror in a joined room took no reflection") }
+        precondition(joinedDark < 0.05, "a joined mirror shows the hall through the doorway, found \(Int(joinedDark * 100)) percent dark")
+        // The same bathroom on its own has nothing past its door.
+        let alone = PreviewRoomScene(layout: PreviewLayout(room: ensuite), library: PreviewFinishLibrary(textureSize: 256))
+        alone.refreshMirror(seenFrom: SIMD3<Float>(1.8, 1.35, 1.3))
+        guard let aloneDark = darkShare(of: alone.scene) else { fatalError("A mirror in a single room took no reflection") }
+        precondition(aloneDark > 0.2, "a single room's mirror shows the empty doorway, found \(Int(aloneDark * 100)) percent dark")
+        // Far across the floor the mirror is left alone.
+        let taken = suite.scene.rootNode.childNodes.count
+        suite.change(grey, roomID: lobbyID.uuidString)
+        suite.refreshMirrors(seenFrom: SIMD3<Float>(40, 1.35, 21.3))
+        precondition(suite.scene.rootNode.childNodes.count == taken, "taking a reflection leaves nothing behind in the floor")
+        print("Independent finishes, saved appliance placement, four door crossings, one sun per floor, a saved floor join, and a joined mirror passed.")
     }
 }
