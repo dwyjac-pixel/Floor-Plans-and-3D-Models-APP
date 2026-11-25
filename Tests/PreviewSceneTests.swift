@@ -299,11 +299,8 @@ struct PreviewSceneTests {
         }
         expect((try? JSONDecoder().decode([PreviewBathroomLight].self, from: Data("[\"Chandelier\"]".utf8))) == nil,
                "an unknown light is refused, so the caller can fall back")
-        // The four kitchen kinds stay out of the plan editor until an older
-        // version can no longer drop them from a saved room.
-        let held: [CornerRoom.Fixture.Kind] = [.shortUpperCabinet, .kitchenSink, .microwave, .dishwasher]
-        expect(held.allSatisfy { !CornerRoom.Fixture.Kind.placeable.contains($0) }, "new kitchen kinds are not offered in the editor")
-        expect(CornerRoom.Fixture.Kind.placeable.count == CornerRoom.Fixture.Kind.allCases.count - 4, "every other kind is still offered")
+        // Every kind can be placed: the newer ones are saved beside rooms.json.
+        expect(Set(CornerRoom.Fixture.Kind.placeable) == Set(CornerRoom.Fixture.Kind.allCases), "every kind is offered in the editor")
     }
 
     // MARK: Stills

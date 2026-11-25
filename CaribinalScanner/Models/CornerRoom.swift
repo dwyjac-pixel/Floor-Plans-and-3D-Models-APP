@@ -124,16 +124,12 @@ struct CornerRoom: Codable {
 
             var id: String { rawValue }
 
-            /// Kinds the plan editor offers. The four kitchen kinds added for
-            /// the finished preview are held back: version 1.0.2 skips a
-            /// fixture whose kind it does not know and then saves the room
-            /// and every saved revision without it, so a kitchen drawn with
-            /// them would lose them on any older device sharing the project.
-            /// Offer them once a version that keeps unknown kinds has
-            /// replaced 1.0.2.
-            static let placeable: [Kind] = allCases.filter {
-                ![.shortUpperCabinet, .kitchenSink, .microwave, .dishwasher].contains($0)
-            }
+            /// Kinds the plan editor offers: all of them. A kind added
+            /// after 1.0.2 is safe to place because it is saved beside
+            /// rooms.json, never in it (see `FixtureSidecar`). Add a new
+            /// case here freely; do not add it to
+            /// `FixtureSidecar.legacyKinds`.
+            static let placeable: [Kind] = allCases
 
             enum Category: String, CaseIterable, Identifiable {
                 case kitchen = "Kitchen"

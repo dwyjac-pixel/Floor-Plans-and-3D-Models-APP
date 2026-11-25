@@ -440,7 +440,6 @@ enum ScanStore {
                              interruptedRoom: Bool,
                              directory dir: URL) async throws -> (review: ScanWalkReview, rooms: [RoomEntry]) {
         let walksURL = dir.appendingPathComponent(scanWalksFileName)
-        let roomsURL = dir.appendingPathComponent(roomsFileName)
         let existingWalks = try readScanFile([ScanWalk].self, at: walksURL) ?? []
         let existingRooms = try readEditableRooms(in: dir)
         let converted = captured.map(ScanConverter.convert)
@@ -461,7 +460,7 @@ enum ScanStore {
         let additions = review.additions(converted: converted, alongside: existingRooms)
         let all = existingRooms + additions
         if !additions.isEmpty {
-            try coordinatedWrite(JSONEncoder().encode(RoomsFile(rooms: all)), to: roomsURL)
+            try writeRooms(all, in: dir)
         }
 
         // Merged walk USDZ via StructureBuilder — a nice-to-have whose
@@ -486,7 +485,8 @@ enum ScanStore {
     }
 
     private static func readEditableRooms(in directory: URL) throws -> [RoomEntry] {
-        if let file = try readScanFile(RoomsFile.self, at: directory.appendingPathComponent(roomsFileName)) {
+        if let file = try readScanFile(RoomsFile.self, at: directory.appendingPathComponent(roomsFileName),
+                                       prepare: { withStoredFixtures($0, in: directory) }) {
             return file.rooms
         }
         if let legacy = try readScanFile(CornerRoom.self, at: directory.appendingPathComponent(cornerRoomFileName)) {
@@ -496,7 +496,8 @@ enum ScanStore {
     }
 
     /// A failed read must never look like an empty project during a save.
-    private static func readScanFile<Value: Decodable>(_ type: Value.Type, at url: URL) throws -> Value? {
+    private static func readScanFile<Value: Decodable>(_ type: Value.Type, at url: URL,
+                                                       prepare: (Data) -> Data = { $0 }) throws -> Value? {
         if isAwaitingDownload(url) {
             requestDownload(of: url)
             throw CocoaError(.fileReadUnknown, userInfo: [
@@ -509,7 +510,7 @@ enum ScanStore {
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
             return nil
         }
-        return try JSONDecoder().decode(type, from: data)
+        return try JSONDecoder().decode(type, from: prepare(data))
     }
 
     static func usdzURL(for project: RenovationProject) -> URL? {
@@ -544,7 +545,8 @@ enum ScanStore {
     /// working: a legacy corner_room.json is read as a single "Room 1"
     /// until the first rooms.json save takes over.
     static func loadRooms(for project: RenovationProject) -> [RoomEntry] {
-        if let file = decodeFile(RoomsFile.self, named: roomsFileName, for: project) {
+        if let file = decodeFile(RoomsFile.self, named: roomsFileName, for: project,
+                                 prepare: { data, directory in withStoredFixtures(data, in: directory) }) {
             return file.rooms
         }
         if let legacy = loadCornerRoom(for: project) {
@@ -559,7 +561,102 @@ enum ScanStore {
     }
 
     static func saveRooms(_ rooms: [RoomEntry], for project: RenovationProject) throws {
-        try write(JSONEncoder().encode(RoomsFile(rooms: rooms)), named: roomsFileName, for: project)
+        try writeRooms(rooms, in: folder(for: project))
+    }
+
+    // MARK: - Fixture kinds newer than 1.0.2
+
+    /// What the fixture sidecar in a project folder holds right now.
+    private enum StoredFixtures {
+        case none
+        case data(Data)
+        /// Still downloading, or not readable at this moment. Its contents
+        /// are unknown, so nothing may be concluded from it or written over it.
+        case unavailable
+    }
+
+    private static func storedFixtures(in directory: URL) -> StoredFixtures {
+        let url = directory.appendingPathComponent(FixtureSidecar.fileName)
+        if isAwaitingDownload(url) {
+            requestDownload(of: url)
+            return .unavailable
+        }
+        do {
+            return .data(try Data(contentsOf: url))
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return .none
+        } catch {
+            return .unavailable
+        }
+    }
+
+    /// The sidecar bytes each project folder's rooms were last read or
+    /// written with (empty when there was none). A save treats its rooms
+    /// as complete only against these same bytes: if the sidecar has since
+    /// changed, or was never read, a fixture missing from the rooms may
+    /// simply not have been loaded, so nothing stored is dropped.
+    private static var fixturesReadWith: [String: Data] = [:]
+    private static let fixturesLock = NSLock()
+
+    private static func noteFixtures(_ data: Data?, in directory: URL) {
+        fixturesLock.lock()
+        fixturesReadWith[directory.standardizedFileURL.path] = data
+        fixturesLock.unlock()
+    }
+
+    private static func fixturesNoted(in directory: URL) -> Data? {
+        fixturesLock.lock()
+        defer { fixturesLock.unlock() }
+        return fixturesReadWith[directory.standardizedFileURL.path]
+    }
+
+    /// rooms.json bytes with the newer fixture kinds put back.
+    private static func withStoredFixtures(_ data: Data, in directory: URL) -> Data {
+        switch storedFixtures(in: directory) {
+        case .none:
+            noteFixtures(Data(), in: directory)
+            return data
+        case .data(let stored):
+            noteFixtures(stored, in: directory)
+            return FixtureSidecar.mergeRooms(data, sidecar: stored)
+        case .unavailable:
+            noteFixtures(nil, in: directory)
+            return data
+        }
+    }
+
+    /// Writes rooms.json with the kinds 1.0.2 cannot read kept beside it.
+    private static func writeRooms(_ rooms: [RoomEntry], in directory: URL) throws {
+        let encoded = try JSONEncoder().encode(RoomsFile(rooms: rooms))
+        let roomsURL = directory.appendingPathComponent(roomsFileName)
+        let stored: Data?
+        switch storedFixtures(in: directory) {
+        case .unavailable:
+            // The sidecar cannot be read, so it cannot be merged with
+            // safely. Write the rooms whole: nothing is dropped here, and
+            // the next save moves the newer kinds out again.
+            noteFixtures(nil, in: directory)
+            try coordinatedWrite(encoded, to: roomsURL)
+            return
+        case .none: stored = nil
+        case .data(let data): stored = data
+        }
+        let complete = fixturesNoted(in: directory) == (stored ?? Data())
+        guard let split = FixtureSidecar.splitRooms(encoded, sidecar: stored, mode: complete ? .replace : .keepStored) else {
+            try coordinatedWrite(encoded, to: roomsURL)
+            return
+        }
+        // Sidecar first: if the app stops between the two writes, a newly
+        // added fixture is already safe and simply waits for its room.
+        var written = stored
+        if let sidecar = split.sidecar, sidecar != FixtureSidecar.canonical(stored) {
+            try coordinatedWrite(sidecar, to: directory.appendingPathComponent(FixtureSidecar.fileName))
+            written = sidecar
+        }
+        try coordinatedWrite(split.file, to: roomsURL)
+        // Only a save made from complete rooms leaves the two in step. After
+        // a cautious one, saves stay cautious until the rooms are read again.
+        if complete { noteFixtures(written ?? Data(), in: directory) }
     }
 
     /// Legacy pre-multi-room file — read only, for migration into rooms.json.
@@ -571,7 +668,19 @@ enum ScanStore {
 
     static func loadPlanHistory(for project: RenovationProject) throws -> PlanHistory? {
         guard let directory = existingFolder(for: project) else { return nil }
-        return try readScanFile(PlanHistory.self, at: directory.appendingPathComponent(planHistoryFileName))
+        let stored: Data?
+        switch storedFixtures(in: directory) {
+        case .none: stored = nil
+        case .data(let data): stored = data
+        case .unavailable:
+            // A revision shown without some of its fixtures would be a
+            // wrong drawing. Wait for the file, as for the history itself.
+            throw CocoaError(.fileReadUnknown, userInfo: [
+                NSLocalizedDescriptionKey: "Project files are still downloading. Wait for them to finish, then try again."
+            ])
+        }
+        return try readScanFile(PlanHistory.self, at: directory.appendingPathComponent(planHistoryFileName),
+                                prepare: { FixtureSidecar.mergeHistory($0, sidecar: stored) })
     }
 
     static func savePlanSnapshot(for project: RenovationProject, revisionName: String?) throws -> PlanHistory {
@@ -588,12 +697,31 @@ enum ScanStore {
         let markers = try readScanFile(PlanMarkers.self, at: directory.appendingPathComponent(markersFileName))
             ?? PlanMarkers()
 
+        // The newer fixture kinds of every saved revision live in the
+        // sidecar. It is read and written under the same coordination as
+        // the history, so the two always describe the same revisions.
+        let fixturesURL = directory.appendingPathComponent(FixtureSidecar.fileName)
+        if isAwaitingDownload(fixturesURL) {
+            requestDownload(of: fixturesURL)
+            throw PlanSnapshotError.downloading
+        }
+        let noted = fixturesNoted(in: directory)
+
         var coordinationError: NSError?
         var result: Result<PlanHistory, Error>?
         NSFileCoordinator(filePresenter: nil)
-            .coordinate(writingItemAt: historyURL, options: .forReplacing, error: &coordinationError) { url in
+            .coordinate(writingItemAt: historyURL, options: .forReplacing,
+                        writingItemAt: fixturesURL, options: .forReplacing,
+                        error: &coordinationError) { url, extrasURL in
                 result = Result {
-                    let current = try readScanFile(PlanHistory.self, at: url)
+                    let stored: Data?
+                    do {
+                        stored = try Data(contentsOf: extrasURL)
+                    } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+                        stored = nil
+                    }
+                    let current = try readScanFile(PlanHistory.self, at: url,
+                                                   prepare: { FixtureSidecar.mergeHistory($0, sidecar: stored) })
                     let history: PlanHistory
                     if let revisionName {
                         guard var current else { throw PlanSnapshotError.missingExistingConditions }
@@ -604,7 +732,16 @@ enum ScanStore {
                         history = PlanHistory(existingConditions: .init(
                             title: "Existing Conditions", rooms: rooms, markers: markers))
                     }
-                    try JSONEncoder().encode(history).write(to: url, options: .atomic)
+                    guard let split = FixtureSidecar.splitHistory(try JSONEncoder().encode(history), sidecar: stored) else {
+                        throw PlanSnapshotError.fixturesUnreadable
+                    }
+                    if let sidecar = split.sidecar, sidecar != FixtureSidecar.canonical(stored) {
+                        try sidecar.write(to: extrasURL, options: .atomic)
+                        // The live rooms were in step with the old bytes, so
+                        // they are in step with the new ones: only revisions changed.
+                        if noted == (stored ?? Data()) { noteFixtures(sidecar, in: directory) }
+                    }
+                    try split.file.write(to: url, options: .atomic)
                     return history
                 }
             }
@@ -614,7 +751,7 @@ enum ScanStore {
     }
 
     private enum PlanSnapshotError: LocalizedError {
-        case noRooms, downloading, missingExistingConditions, existingConditionsAlreadySaved
+        case noRooms, downloading, missingExistingConditions, existingConditionsAlreadySaved, fixturesUnreadable
 
         var errorDescription: String? {
             switch self {
@@ -622,6 +759,7 @@ enum ScanStore {
             case .downloading: "Plan history is still downloading. Wait for it to finish, then try again."
             case .missingExistingConditions: "Save existing conditions before saving a proposed revision."
             case .existingConditionsAlreadySaved: "Existing conditions are already saved."
+            case .fixturesUnreadable: "A project file could not be read, so the revision was not saved. Try again."
             }
         }
     }
@@ -750,7 +888,8 @@ enum ScanStore {
     /// nil, so the caller's next save can't atomically overwrite a
     /// corrupt-but-recoverable file. File formats are unchanged.
     private static func decodeFile<T: Decodable>(_ type: T.Type, named name: String,
-                                                 for project: RenovationProject) -> T? {
+                                                 for project: RenovationProject,
+                                                 prepare: (Data, URL) -> Data = { data, _ in data }) -> T? {
         guard let url = existingFile(named: name, for: project) else { return nil }
         // A *read* failure (device locked under data protection, file not yet
         // materialised, transient I/O) must NOT quarantine — the bytes may be
@@ -759,7 +898,7 @@ enum ScanStore {
         // read bytes means the content is actually corrupt.
         guard let data = try? Data(contentsOf: url) else { return nil }
         do {
-            return try JSONDecoder().decode(type, from: data)
+            return try JSONDecoder().decode(type, from: prepare(data, url.deletingLastPathComponent()))
         } catch {
             quarantineFile(at: url)
             return nil
